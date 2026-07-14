@@ -1,0 +1,28 @@
+env: development
+log_level: INFO
+
+kernel:
+  max_concurrent_tasks: 2
+  default_agent: software_engineer
+
+memory:
+  backend: local  # local | sqlite | qdrant
+  data_dir: ./data
+
+tools:
+  filesystem:
+    enabled: true
+    # Jail tool reads/writes to workspace root by default
+    allow_write: false
+  shell:
+    enabled: false  # enable in Phase 1 with sandbox
+  http:
+    enabled: true
+
+agents:
+  echo:
+    enabled: true
+  software_engineer:
+    enabled: true
+  architect:
+    enabled: true
