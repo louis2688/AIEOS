@@ -9,9 +9,16 @@ import {
   deleteProject,
   runPipeline,
 } from "@/lib/aeios";
+import { requireUser } from "@/lib/auth";
 import type { PipelineStep } from "@/lib/types";
 
 export async function runGoalAction(formData: FormData) {
+  try {
+    await requireUser();
+  } catch {
+    return { ok: false as const, error: "Sign in required" };
+  }
+
   const goal = String(formData.get("goal") || "").trim();
   const agent = String(formData.get("agent") || "").trim() || undefined;
   if (!goal) {
@@ -32,6 +39,12 @@ export async function runGoalAction(formData: FormData) {
 }
 
 export async function createProjectAction(formData: FormData) {
+  try {
+    await requireUser();
+  } catch {
+    return { ok: false as const, error: "Sign in required" };
+  }
+
   const name = String(formData.get("name") || "").trim();
   const description = String(formData.get("description") || "").trim();
   if (!name) {
@@ -50,6 +63,12 @@ export async function createProjectAction(formData: FormData) {
 }
 
 export async function deleteProjectAction(formData: FormData) {
+  try {
+    await requireUser();
+  } catch {
+    return { ok: false as const, error: "Sign in required" };
+  }
+
   const id = String(formData.get("id") || "").trim();
   if (!id) return { ok: false as const, error: "Missing id" };
   try {
@@ -65,6 +84,12 @@ export async function deleteProjectAction(formData: FormData) {
 }
 
 export async function createPipelineAction(formData: FormData) {
+  try {
+    await requireUser();
+  } catch {
+    return { ok: false as const, error: "Sign in required" };
+  }
+
   const name = String(formData.get("name") || "").trim();
   const description = String(formData.get("description") || "").trim();
   const projectId = String(formData.get("project_id") || "").trim() || null;
@@ -103,6 +128,12 @@ export async function createPipelineAction(formData: FormData) {
 }
 
 export async function deletePipelineAction(formData: FormData) {
+  try {
+    await requireUser();
+  } catch {
+    return { ok: false as const, error: "Sign in required" };
+  }
+
   const id = String(formData.get("id") || "").trim();
   if (!id) return { ok: false as const, error: "Missing id" };
   try {
@@ -118,6 +149,12 @@ export async function deletePipelineAction(formData: FormData) {
 }
 
 export async function runPipelineAction(formData: FormData) {
+  try {
+    await requireUser();
+  } catch {
+    return { ok: false as const, error: "Sign in required" };
+  }
+
   const id = String(formData.get("id") || "").trim();
   const inputGoal = String(formData.get("input_goal") || "").trim();
   if (!id || !inputGoal) {

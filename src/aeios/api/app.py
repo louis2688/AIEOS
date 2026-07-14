@@ -122,7 +122,7 @@ def create_app(workspace: Path | None = None) -> FastAPI:
     runner = PipelineRunner(kernel, pipelines)
     knowledge = KnowledgeSearch(kernel, pipelines, projects)
 
-    app = FastAPI(title="AEIOS API", version="0.5.0")
+    app = FastAPI(title="AEIOS API", version="0.6.0")
     app.state.kernel = kernel
     app.state.projects = projects
     app.state.pipelines = pipelines

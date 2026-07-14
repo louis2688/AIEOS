@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { UserMenu } from "@/components/UserMenu";
 
 const links = [
   { href: "/", label: "Control" },
@@ -33,27 +34,30 @@ export function AppShell({
               Kernel-backed control plane for agents, tasks, and project memory.
             </p>
           </div>
-          <nav className="flex flex-wrap gap-2">
-            {links.map((link) => {
-              const active =
-                link.href === "/"
-                  ? pathname === "/"
-                  : pathname.startsWith(link.href);
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={`rounded-md px-3 py-1.5 font-mono text-xs tracking-wide uppercase transition ${
-                    active
-                      ? "bg-[var(--accent)] text-[#102014]"
-                      : "border border-[var(--line)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--ink)]"
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
-          </nav>
+          <div className="flex flex-col items-start gap-3 md:items-end">
+            <UserMenu />
+            <nav className="flex flex-wrap gap-2">
+              {links.map((link) => {
+                const active =
+                  link.href === "/"
+                    ? pathname === "/"
+                    : pathname.startsWith(link.href);
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={`rounded-md px-3 py-1.5 font-mono text-xs tracking-wide uppercase transition ${
+                      active
+                        ? "bg-[var(--accent)] text-[#102014]"
+                        : "border border-[var(--line)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--ink)]"
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
         </header>
         <main className="flex-1 pb-10">{children}</main>
       </div>

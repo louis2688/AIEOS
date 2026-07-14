@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ClerkProvider } from "@clerk/nextjs";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
 import { PageFrame } from "@/components/PageFrame";
 import "./globals.css";
@@ -31,13 +32,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${display.variable} ${body.variable} ${mono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full">
-        <PageFrame>{children}</PageFrame>
-      </body>
-    </html>
+    <ClerkProvider>
+      <html
+        lang="en"
+        className={`${display.variable} ${body.variable} ${mono.variable} h-full antialiased`}
+      >
+        <body className="min-h-full">
+          <PageFrame>{children}</PageFrame>
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }
