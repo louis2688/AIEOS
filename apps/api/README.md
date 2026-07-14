@@ -28,6 +28,7 @@ aeios serve --host 127.0.0.1 --port 8080
 | POST | `/v1/pipelines/{id}/runs` | Run pipeline `{ "input_goal": "..." }` |
 | GET | `/v1/pipelines/{id}/runs` | List runs for a pipeline |
 | GET | `/v1/pipeline-runs/{id}` | Get one run |
+| GET | `/v1/knowledge/search?q=` | Search tasks / pipelines / runs / projects / memory |
 
 ## Example
 

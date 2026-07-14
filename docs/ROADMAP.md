@@ -27,9 +27,9 @@
 - [x] Projects CRUD (SQLite + API + UI)
 - [x] CORS for local web ↔ API
 - [x] Pipelines (create / run / history UI + API)
+- [x] Knowledge base search (API + UI)
 - [ ] Clerk auth
 - [ ] Model library registry
-- [ ] Knowledge base search UI
 
 ## Phase 3 — Hardening
 
@@ -55,3 +55,4 @@
 | 2026-07-15 | Phase 1: SQLite + FastAPI + sandboxed shell; LLM planner optional |
 | 2026-07-15 | Phase 2: thin dashboard first; Clerk/pipelines after core loop works |
 | 2026-07-15 | Pipelines: sequential kernel steps with `{input}` / `{previous}` templates |
+| 2026-07-15 | Knowledge search over tasks, pipelines, runs, projects, memory |
