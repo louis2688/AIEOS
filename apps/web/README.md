@@ -38,3 +38,8 @@ Open http://localhost:3000
 ## Env
 
 - `AEIOS_API_URL` / `NEXT_PUBLIC_AEIOS_API_URL` — default `http://127.0.0.1:8080`
+- Clerk keys — see [docs/AUTH.md](../../docs/AUTH.md) and `.env.example`
+
+## Auth
+
+Dashboard routes require Clerk sign-in (`/sign-in`, `/sign-up`). Server actions also check the session.

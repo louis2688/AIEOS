@@ -23,8 +23,10 @@ aeios serve --port 8080
 
 # Dashboard (separate terminal)
 cd apps/web && npm install && npm run dev
-# → http://localhost:3000
+# → http://localhost:3000 (Clerk sign-in required — see docs/AUTH.md)
 ```
+
+Auth setup: [docs/AUTH.md](docs/AUTH.md)
 
 Optional local infra (Postgres, Qdrant, MinIO):
 
