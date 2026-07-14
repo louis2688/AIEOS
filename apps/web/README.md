@@ -31,6 +31,8 @@ Open http://localhost:3000
 | `/tasks/[id]` | Task detail |
 | `/assistant` | Chat UI over kernel tasks |
 | `/projects` | Simple project CRUD |
+| `/pipelines` | Create / list multi-step workflows |
+| `/pipelines/[id]` | Run pipeline + run history |
 
 ## Env
 

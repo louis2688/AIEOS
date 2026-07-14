@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from aeios.core.kernel import Kernel
+from aeios.core.pipeline_runner import PipelineRunner
+from aeios.persistence.pipelines import PipelineStep, PipelineStore
 from aeios.persistence.projects import ProjectStore
 
 
@@ -40,14 +42,72 @@ class ProjectOut(BaseModel):
     updated_at: str
 
 
+class PipelineStepIn(BaseModel):
+    goal: str = Field(..., min_length=1)
+    agent: str = "software_engineer"
+
+
+class PipelineCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    description: str = Field(default="", max_length=2000)
+    project_id: str | None = None
+    steps: list[PipelineStepIn] = Field(..., min_length=1)
+
+
+class PipelineOut(BaseModel):
+    id: str
+    name: str
+    description: str
+    project_id: str | None
+    steps: list[PipelineStepIn]
+    created_at: str
+    updated_at: str
+
+
+class PipelineRunCreate(BaseModel):
+    input_goal: str = Field(..., min_length=1)
+
+
+class PipelineRunOut(BaseModel):
+    id: str
+    pipeline_id: str
+    status: str
+    input_goal: str
+    step_results: list[dict[str, Any]]
+    result: str | None
+    error: str | None
+    created_at: str
+    updated_at: str
+
+
+def _pipeline_out(p: Any) -> PipelineOut:
+    return PipelineOut(
+        id=p.id,
+        name=p.name,
+        description=p.description,
+        project_id=p.project_id,
+        steps=[PipelineStepIn(goal=s.goal, agent=s.agent) for s in p.steps],
+        created_at=p.created_at,
+        updated_at=p.updated_at,
+    )
+
+
+def _run_out(r: Any) -> PipelineRunOut:
+    return PipelineRunOut(**r.__dict__)
+
+
 def create_app(workspace: Path | None = None) -> FastAPI:
     root = workspace or Path.cwd()
     kernel = Kernel(workspace=root)
-    projects = ProjectStore(kernel.data_dir / "aeios.db")
+    db_path = kernel.data_dir / "aeios.db"
+    projects = ProjectStore(db_path)
+    pipelines = PipelineStore(db_path)
+    runner = PipelineRunner(kernel, pipelines)
 
-    app = FastAPI(title="AEIOS API", version="0.3.0")
+    app = FastAPI(title="AEIOS API", version="0.4.0")
     app.state.kernel = kernel
     app.state.projects = projects
+    app.state.pipelines = pipelines
 
     app.add_middleware(
         CORSMiddleware,
@@ -114,5 +174,64 @@ def create_app(workspace: Path | None = None) -> FastAPI:
         if not projects.delete(project_id):
             raise HTTPException(status_code=404, detail="Project not found")
         return {"ok": True}
+
+    @app.get("/v1/pipelines", response_model=list[PipelineOut])
+    def list_pipelines(limit: int = 50) -> list[PipelineOut]:
+        return [_pipeline_out(p) for p in pipelines.list(limit=limit)]
+
+    @app.post("/v1/pipelines", response_model=PipelineOut)
+    def create_pipeline(body: PipelineCreate) -> PipelineOut:
+        if body.project_id and not projects.get(body.project_id):
+            raise HTTPException(status_code=400, detail="Unknown project_id")
+        try:
+            pipeline = pipelines.create(
+                name=body.name,
+                description=body.description,
+                project_id=body.project_id,
+                steps=[
+                    PipelineStep(goal=s.goal, agent=s.agent) for s in body.steps
+                ],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _pipeline_out(pipeline)
+
+    @app.get("/v1/pipelines/{pipeline_id}", response_model=PipelineOut)
+    def get_pipeline(pipeline_id: str) -> PipelineOut:
+        pipeline = pipelines.get(pipeline_id)
+        if not pipeline:
+            raise HTTPException(status_code=404, detail="Pipeline not found")
+        return _pipeline_out(pipeline)
+
+    @app.delete("/v1/pipelines/{pipeline_id}")
+    def delete_pipeline(pipeline_id: str) -> dict[str, bool]:
+        if not pipelines.delete(pipeline_id):
+            raise HTTPException(status_code=404, detail="Pipeline not found")
+        return {"ok": True}
+
+    @app.post("/v1/pipelines/{pipeline_id}/runs", response_model=PipelineRunOut)
+    def run_pipeline(pipeline_id: str, body: PipelineRunCreate) -> PipelineRunOut:
+        pipeline = pipelines.get(pipeline_id)
+        if not pipeline:
+            raise HTTPException(status_code=404, detail="Pipeline not found")
+        run = runner.run(pipeline, body.input_goal)
+        return _run_out(run)
+
+    @app.get("/v1/pipelines/{pipeline_id}/runs", response_model=list[PipelineRunOut])
+    def list_pipeline_runs(pipeline_id: str, limit: int = 50) -> list[PipelineRunOut]:
+        if not pipelines.get(pipeline_id):
+            raise HTTPException(status_code=404, detail="Pipeline not found")
+        return [_run_out(r) for r in pipelines.list_runs(pipeline_id=pipeline_id, limit=limit)]
+
+    @app.get("/v1/pipeline-runs/{run_id}", response_model=PipelineRunOut)
+    def get_pipeline_run(run_id: str) -> PipelineRunOut:
+        run = pipelines.get_run(run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail="Pipeline run not found")
+        return _run_out(run)
+
+    @app.get("/v1/pipeline-runs", response_model=list[PipelineRunOut])
+    def list_all_pipeline_runs(limit: int = 50) -> list[PipelineRunOut]:
+        return [_run_out(r) for r in pipelines.list_runs(limit=limit)]
 
     return app

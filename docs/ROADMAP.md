@@ -26,8 +26,8 @@
 - [x] Assistant chat UI wired to kernel
 - [x] Projects CRUD (SQLite + API + UI)
 - [x] CORS for local web ↔ API
+- [x] Pipelines (create / run / history UI + API)
 - [ ] Clerk auth
-- [ ] Pipelines UI + run viewer
 - [ ] Model library registry
 - [ ] Knowledge base search UI
 
@@ -54,3 +54,4 @@
 | 2026-07-15 | Python kernel; Next.js later; Compose before K8s |
 | 2026-07-15 | Phase 1: SQLite + FastAPI + sandboxed shell; LLM planner optional |
 | 2026-07-15 | Phase 2: thin dashboard first; Clerk/pipelines after core loop works |
+| 2026-07-15 | Pipelines: sequential kernel steps with `{input}` / `{previous}` templates |
