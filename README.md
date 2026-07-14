@@ -65,7 +65,7 @@ AIEOS/
 |-------|-------|--------|
 | 0 | Foundation + hello path | Done |
 | 1 | Kernel MVP (SQLite, shell, API, doctor) | Done |
-| 2 | Product surface (Next.js dashboard + projects) | In progress |
+| 2 | Product surface (dashboard + projects + pipelines) | In progress |
 | 3 | Hardening (security, MCP, observability) | Later |
 
 ## License

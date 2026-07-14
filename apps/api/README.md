@@ -23,6 +23,11 @@ aeios serve --host 127.0.0.1 --port 8080
 | POST | `/v1/tasks` | Execute a goal `{ "goal": "...", "agent": optional }` |
 | GET | `/v1/tasks` | List recent tasks |
 | GET | `/v1/tasks/{id}` | Get one task |
+| GET/POST | `/v1/pipelines` | List / create pipelines |
+| GET/DELETE | `/v1/pipelines/{id}` | Get / delete pipeline |
+| POST | `/v1/pipelines/{id}/runs` | Run pipeline `{ "input_goal": "..." }` |
+| GET | `/v1/pipelines/{id}/runs` | List runs for a pipeline |
+| GET | `/v1/pipeline-runs/{id}` | Get one run |
 
 ## Example
 

@@ -29,3 +29,38 @@ export type Project = {
   created_at: string;
   updated_at: string;
 };
+
+export type PipelineStep = {
+  goal: string;
+  agent: string;
+};
+
+export type Pipeline = {
+  id: string;
+  name: string;
+  description: string;
+  project_id: string | null;
+  steps: PipelineStep[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type PipelineRun = {
+  id: string;
+  pipeline_id: string;
+  status: string;
+  input_goal: string;
+  step_results: {
+    index: number;
+    agent: string;
+    goal: string;
+    task_id: string;
+    status: string;
+    result?: string | null;
+    error?: string | null;
+  }[];
+  result: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+};

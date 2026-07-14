@@ -1,4 +1,11 @@
-import type { KernelStatus, Project, Task } from "./types";
+import type {
+  KernelStatus,
+  Pipeline,
+  PipelineRun,
+  PipelineStep,
+  Project,
+  Task,
+} from "./types";
 
 function apiBase(): string {
   return (
@@ -56,4 +63,43 @@ export function createProject(name: string, description = "") {
 
 export function deleteProject(id: string) {
   return request<{ ok: boolean }>(`/v1/projects/${id}`, { method: "DELETE" });
+}
+
+export function listPipelines(limit = 30) {
+  return request<Pipeline[]>(`/v1/pipelines?limit=${limit}`);
+}
+
+export function getPipeline(id: string) {
+  return request<Pipeline>(`/v1/pipelines/${id}`);
+}
+
+export function createPipeline(input: {
+  name: string;
+  description?: string;
+  project_id?: string | null;
+  steps: PipelineStep[];
+}) {
+  return request<Pipeline>("/v1/pipelines", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deletePipeline(id: string) {
+  return request<{ ok: boolean }>(`/v1/pipelines/${id}`, { method: "DELETE" });
+}
+
+export function runPipeline(id: string, input_goal: string) {
+  return request<PipelineRun>(`/v1/pipelines/${id}/runs`, {
+    method: "POST",
+    body: JSON.stringify({ input_goal }),
+  });
+}
+
+export function listPipelineRuns(pipelineId: string, limit = 30) {
+  return request<PipelineRun[]>(`/v1/pipelines/${pipelineId}/runs?limit=${limit}`);
+}
+
+export function getPipelineRun(runId: string) {
+  return request<PipelineRun>(`/v1/pipeline-runs/${runId}`);
 }
