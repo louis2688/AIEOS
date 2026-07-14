@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aeios"
+version = "0.1.0"
+description = "AI Engineering Operating System — kernel, agents, tools, and memory"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Louis" }]
+dependencies = [
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "typer>=0.12",
+  "rich>=13.7",
+  "python-dotenv>=1.0",
+  "httpx>=0.27",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.5",
+]
+api = [
+  "fastapi>=0.111",
+  "uvicorn[standard]>=0.30",
+]
+vector = [
+  "qdrant-client>=1.10",
+]
+
+[project.scripts]
+aeios = "aeios.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aeios"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
