@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0e1410;
+  --panel: #151c17;
+  --panel-2: #1b241e;
+  --ink: #e8f0e9;
+  --muted: #8fa094;
+  --line: #2a352c;
+  --accent: #b6f25c;
+  --danger: #ff7b72;
+  --glow: rgba(182, 242, 92, 0.12);
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--ink);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+}
+
+.aeios-grid {
+  background-image:
+    linear-gradient(to right, rgba(182, 242, 92, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(182, 242, 92, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse at top, black 20%, transparent 75%);
+}
+
+.aeios-glow {
+  background: radial-gradient(ellipse at top, var(--glow), transparent 65%);
+}
+
+.panel {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  backdrop-filter: blur(6px);
+}
+
+.panel-title {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.field {
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink);
+  padding: 0.7rem 0.85rem;
+  font-size: 0.925rem;
+  outline: none;
+}
+
+.field:focus {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--line));
+  box-shadow: 0 0 0 3px var(--glow);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: #102014;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  transition: filter 120ms ease, transform 120ms ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.font-display {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+}
