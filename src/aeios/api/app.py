@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from aeios.core.kernel import Kernel
 from aeios.core.pipeline_runner import PipelineRunner
+from aeios.knowledge.search import KnowledgeSearch
 from aeios.persistence.pipelines import PipelineStep, PipelineStore
 from aeios.persistence.projects import ProjectStore
 
@@ -80,6 +81,22 @@ class PipelineRunOut(BaseModel):
     updated_at: str
 
 
+class KnowledgeHitOut(BaseModel):
+    kind: str
+    id: str
+    title: str
+    snippet: str
+    score: float
+    href: str | None = None
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class KnowledgeSearchOut(BaseModel):
+    query: str
+    count: int
+    results: list[KnowledgeHitOut]
+
+
 def _pipeline_out(p: Any) -> PipelineOut:
     return PipelineOut(
         id=p.id,
@@ -103,11 +120,13 @@ def create_app(workspace: Path | None = None) -> FastAPI:
     projects = ProjectStore(db_path)
     pipelines = PipelineStore(db_path)
     runner = PipelineRunner(kernel, pipelines)
+    knowledge = KnowledgeSearch(kernel, pipelines, projects)
 
-    app = FastAPI(title="AEIOS API", version="0.4.0")
+    app = FastAPI(title="AEIOS API", version="0.5.0")
     app.state.kernel = kernel
     app.state.projects = projects
     app.state.pipelines = pipelines
+    app.state.knowledge = knowledge
 
     app.add_middleware(
         CORSMiddleware,
@@ -233,5 +252,24 @@ def create_app(workspace: Path | None = None) -> FastAPI:
     @app.get("/v1/pipeline-runs", response_model=list[PipelineRunOut])
     def list_all_pipeline_runs(limit: int = 50) -> list[PipelineRunOut]:
         return [_run_out(r) for r in pipelines.list_runs(limit=limit)]
+
+    @app.get("/v1/knowledge/search", response_model=KnowledgeSearchOut)
+    def knowledge_search(
+        q: str = "",
+        limit: int = 30,
+        kinds: str | None = None,
+    ) -> KnowledgeSearchOut:
+        query = q.strip()
+        if not query:
+            raise HTTPException(status_code=400, detail="Query parameter q is required")
+        kind_set = None
+        if kinds:
+            kind_set = {k.strip() for k in kinds.split(",") if k.strip()}
+        results = knowledge.search(query, limit=max(1, min(limit, 100)), kinds=kind_set)
+        return KnowledgeSearchOut(
+            query=query,
+            count=len(results),
+            results=[KnowledgeHitOut(**hit.to_dict()) for hit in results],
+        )
 
     return app

@@ -64,3 +64,19 @@ export type PipelineRun = {
   created_at: string;
   updated_at: string;
 };
+
+export type KnowledgeHit = {
+  kind: string;
+  id: string;
+  title: string;
+  snippet: string;
+  score: number;
+  href: string | null;
+  meta: Record<string, unknown>;
+};
+
+export type KnowledgeSearchResult = {
+  query: string;
+  count: number;
+  results: KnowledgeHit[];
+};

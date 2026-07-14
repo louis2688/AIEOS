@@ -1,5 +1,6 @@
 import type {
   KernelStatus,
+  KnowledgeSearchResult,
   Pipeline,
   PipelineRun,
   PipelineStep,
@@ -102,4 +103,13 @@ export function listPipelineRuns(pipelineId: string, limit = 30) {
 
 export function getPipelineRun(runId: string) {
   return request<PipelineRun>(`/v1/pipeline-runs/${runId}`);
+}
+
+export function searchKnowledge(query: string, limit = 30, kinds?: string[]) {
+  const params = new URLSearchParams({
+    q: query,
+    limit: String(limit),
+  });
+  if (kinds?.length) params.set("kinds", kinds.join(","));
+  return request<KnowledgeSearchResult>(`/v1/knowledge/search?${params}`);
 }

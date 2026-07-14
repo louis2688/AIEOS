@@ -33,6 +33,7 @@ Open http://localhost:3000
 | `/projects` | Simple project CRUD |
 | `/pipelines` | Create / list multi-step workflows |
 | `/pipelines/[id]` | Run pipeline + run history |
+| `/knowledge` | Search tasks, runs, projects, memory |
 
 ## Env
 
