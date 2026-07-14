@@ -15,7 +15,9 @@ tools:
     # Jail tool reads/writes to workspace root by default
     allow_write: false
   shell:
-    enabled: false  # enable in Phase 1 with sandbox
+    enabled: true
+    timeout_sec: 15
+    # omit allowlist to use defaults (ls, pwd, git status, python, pytest, ...)
   http:
     enabled: true
 

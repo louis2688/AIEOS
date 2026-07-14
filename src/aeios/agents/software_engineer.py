@@ -6,7 +6,7 @@ from aeios.core.types import Task, TaskStatus
 
 class SoftwareEngineerAgent(BaseAgent):
     name = "software_engineer"
-    role = "implementation"
+    role = "software_engineer"
 
     def execute(self, task: Task) -> Task:
         task.status = TaskStatus.RUNNING
@@ -39,12 +39,27 @@ class SoftwareEngineerAgent(BaseAgent):
             task.touch()
             return task
 
-        # Deterministic stub until LLM planning is wired.
+        # Optional shell inspection when tool is registered and goal implies it
+        goal_l = task.goal.lower()
+        if "shell" in self.kernel.tools and any(
+            k in goal_l for k in ("shell", "pwd", "ls ", "command")
+        ):
+            shell = self.call_tool("shell", command="pwd")
+            task.steps.append(
+                {
+                    "step": "shell_pwd",
+                    "status": "ok" if shell.ok else "error",
+                    "output": shell.output,
+                    "error": shell.error,
+                }
+            )
+
         task.status = TaskStatus.COMPLETED
         task.result = (
             f"Accepted goal: {task.goal}\n"
+            f"Plan: {' → '.join(task.plan)}\n"
             f"Workspace entries: {listing.output if listing.ok else 'unavailable'}\n"
-            "Next: attach LLM planner (Phase 1) for real implementation steps."
+            "Next: expand LLM-backed implementation loop in Phase 1.x."
         )
         task.touch()
         return task

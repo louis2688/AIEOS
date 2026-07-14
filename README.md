@@ -10,11 +10,16 @@ AEIOS is an OS-like control plane for AI engineering: a **kernel** that schedule
 cd /Users/louis/projects/AIEOS
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev,api]"
 
 # Smoke path (no API keys, no Docker required)
+aeios doctor
 aeios status
 aeios run "hello"
+aeios task list
+
+# HTTP control plane
+aeios serve --port 8080
 ```
 
 Optional local infra (Postgres, Qdrant, MinIO):
@@ -23,6 +28,8 @@ Optional local infra (Postgres, Qdrant, MinIO):
 docker compose up -d
 cp .env.example .env
 ```
+
+Set `OPENAI_API_KEY` to enable the optional LLM planner (deterministic planner is default).
 
 ## Layout
 
@@ -52,9 +59,9 @@ AIEOS/
 
 | Phase | Focus | Status |
 |-------|-------|--------|
-| 0 | Foundation + hello path | In progress |
-| 1 | Kernel MVP (scheduler, memory, agents, tools) | Next |
-| 2 | Product surface (Next.js + projects/pipelines) | Later |
+| 0 | Foundation + hello path | Done |
+| 1 | Kernel MVP (SQLite, shell, API, doctor) | Done |
+| 2 | Product surface (Next.js + projects/pipelines) | Next |
 | 3 | Hardening (security, MCP, observability) | Later |
 
 ## License
