@@ -20,6 +20,10 @@ aeios task list
 
 # HTTP control plane
 aeios serve --port 8080
+
+# Dashboard (separate terminal)
+cd apps/web && npm install && npm run dev
+# → http://localhost:3000
 ```
 
 Optional local infra (Postgres, Qdrant, MinIO):
@@ -61,7 +65,7 @@ AIEOS/
 |-------|-------|--------|
 | 0 | Foundation + hello path | Done |
 | 1 | Kernel MVP (SQLite, shell, API, doctor) | Done |
-| 2 | Product surface (Next.js + projects/pipelines) | Next |
+| 2 | Product surface (Next.js dashboard + projects) | In progress |
 | 3 | Hardening (security, MCP, observability) | Later |
 
 ## License

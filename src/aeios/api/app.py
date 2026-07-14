@@ -4,9 +4,11 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from aeios.core.kernel import Kernel
+from aeios.persistence.projects import ProjectStore
 
 
 class TaskCreate(BaseModel):
@@ -25,10 +27,38 @@ class TaskOut(BaseModel):
     error: str | None
 
 
+class ProjectCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    description: str = Field(default="", max_length=2000)
+
+
+class ProjectOut(BaseModel):
+    id: str
+    name: str
+    description: str
+    created_at: str
+    updated_at: str
+
+
 def create_app(workspace: Path | None = None) -> FastAPI:
-    kernel = Kernel(workspace=workspace or Path.cwd())
-    app = FastAPI(title="AEIOS API", version="0.2.0")
+    root = workspace or Path.cwd()
+    kernel = Kernel(workspace=root)
+    projects = ProjectStore(kernel.data_dir / "aeios.db")
+
+    app = FastAPI(title="AEIOS API", version="0.3.0")
     app.state.kernel = kernel
+    app.state.projects = projects
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.get("/health")
     def health() -> dict[str, Any]:
@@ -62,5 +92,27 @@ def create_app(workspace: Path | None = None) -> FastAPI:
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         return TaskOut(**task.model_dump(mode="json"))
+
+    @app.get("/v1/projects", response_model=list[ProjectOut])
+    def list_projects(limit: int = 50) -> list[ProjectOut]:
+        return [ProjectOut(**p.__dict__) for p in projects.list(limit=limit)]
+
+    @app.post("/v1/projects", response_model=ProjectOut)
+    def create_project(body: ProjectCreate) -> ProjectOut:
+        project = projects.create(body.name, body.description)
+        return ProjectOut(**project.__dict__)
+
+    @app.get("/v1/projects/{project_id}", response_model=ProjectOut)
+    def get_project(project_id: str) -> ProjectOut:
+        project = projects.get(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return ProjectOut(**project.__dict__)
+
+    @app.delete("/v1/projects/{project_id}")
+    def delete_project(project_id: str) -> dict[str, bool]:
+        if not projects.delete(project_id):
+            raise HTTPException(status_code=404, detail="Project not found")
+        return {"ok": True}
 
     return app

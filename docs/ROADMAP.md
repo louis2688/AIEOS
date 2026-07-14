@@ -19,22 +19,19 @@
 - [x] FastAPI control plane (`aeios serve`)
 - [x] `aeios doctor` health checks
 
-### Phase 1 follow-ups (optional polish)
+## Phase 2 — Product surface
 
-- [ ] Postgres backend behind same store interface
-- [ ] Richer LLM implementation loop (not just planning)
-- [ ] Auth middleware on API
-
-## Phase 2 — Product surface (weeks 5–7)
-
-- [ ] Next.js app (`apps/web`) + Clerk auth
-- [ ] Projects CRUD
+- [x] Next.js app (`apps/web`) scaffold
+- [x] Dashboard: status + run goal + task history/detail
+- [x] Assistant chat UI wired to kernel
+- [x] Projects CRUD (SQLite + API + UI)
+- [x] CORS for local web ↔ API
+- [ ] Clerk auth
 - [ ] Pipelines UI + run viewer
 - [ ] Model library registry
 - [ ] Knowledge base search UI
-- [ ] Assistant chat wired to kernel
 
-## Phase 3 — Hardening (weeks 8–10)
+## Phase 3 — Hardening
 
 - [ ] Security: sandbox, RBAC, secrets hygiene
 - [ ] Observability: traces, token/cost metrics
@@ -42,7 +39,7 @@
 - [ ] MCP bridge for external tools
 - [ ] CI (GitHub Actions) + staging deploy
 
-## Phase 4 — Scale (week 11+)
+## Phase 4 — Scale
 
 - [ ] Multi-tenant isolation
 - [ ] gRPC between kernel services (if needed)
@@ -56,3 +53,4 @@
 | 2026-07-15 | Strategy **B → A**: kernel/CLI first, product UI second |
 | 2026-07-15 | Python kernel; Next.js later; Compose before K8s |
 | 2026-07-15 | Phase 1: SQLite + FastAPI + sandboxed shell; LLM planner optional |
+| 2026-07-15 | Phase 2: thin dashboard first; Clerk/pipelines after core loop works |
