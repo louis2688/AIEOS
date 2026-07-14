@@ -17,15 +17,7 @@ class BaseAgent(ABC):
         self.kernel = kernel
 
     def plan(self, goal: str) -> list[str]:
-        """Deterministic Phase 0 planner — replace with LLM planning later."""
-        lowered = goal.strip().lower()
-        if lowered in {"hello", "hi", "ping"}:
-            return ["Acknowledge goal", "Call echo tool", "Return greeting"]
-        return [
-            "Acknowledge goal",
-            "Inspect workspace listing",
-            "Summarize next action",
-        ]
+        return self.kernel.planner.plan(goal, agent_role=self.role)
 
     def call_tool(self, name: str, **kwargs: Any) -> ToolResult:
         return self.kernel.call_tool(name, **kwargs)
