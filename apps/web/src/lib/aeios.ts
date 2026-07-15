@@ -1,6 +1,7 @@
 import type {
   KernelStatus,
   KnowledgeSearchResult,
+  ModelRecord,
   Pipeline,
   PipelineRun,
   PipelineStep,
@@ -112,4 +113,37 @@ export function searchKnowledge(query: string, limit = 30, kinds?: string[]) {
   });
   if (kinds?.length) params.set("kinds", kinds.join(","));
   return request<KnowledgeSearchResult>(`/v1/knowledge/search?${params}`);
+}
+
+export function listModels(limit = 100) {
+  return request<ModelRecord[]>(`/v1/models?limit=${limit}`);
+}
+
+export function createModel(input: {
+  name: string;
+  provider: string;
+  model_id: string;
+  base_url?: string | null;
+  api_key?: string | null;
+  is_default?: boolean;
+  enabled?: boolean;
+}) {
+  return request<ModelRecord>("/v1/models", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function setDefaultModel(id: string) {
+  return request<ModelRecord>(`/v1/models/${id}/default`, { method: "POST" });
+}
+
+export function deleteModel(id: string) {
+  return request<{ ok: boolean }>(`/v1/models/${id}`, { method: "DELETE" });
+}
+
+export function testModel(id: string) {
+  return request<{ ok: boolean; reply: string }>(`/v1/models/${id}/test`, {
+    method: "POST",
+  });
 }

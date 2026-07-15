@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from aeios.core.kernel import Kernel
 from aeios.core.pipeline_runner import PipelineRunner
 from aeios.knowledge.search import KnowledgeSearch
+from aeios.models.client import ModelClient
 from aeios.persistence.pipelines import PipelineStep, PipelineStore
 from aeios.persistence.projects import ProjectStore
 
@@ -97,6 +98,38 @@ class KnowledgeSearchOut(BaseModel):
     results: list[KnowledgeHitOut]
 
 
+class ModelCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    provider: str = Field(..., min_length=1)
+    model_id: str = Field(..., min_length=1, max_length=120)
+    base_url: str | None = None
+    api_key: str | None = None
+    is_default: bool = False
+    enabled: bool = True
+
+
+class ModelUpdate(BaseModel):
+    name: str | None = None
+    model_id: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    enabled: bool | None = None
+
+
+class ModelOut(BaseModel):
+    id: str
+    name: str
+    provider: str
+    model_id: str
+    base_url: str | None
+    api_key_set: bool
+    api_key_masked: str | None
+    is_default: bool
+    enabled: bool
+    created_at: str
+    updated_at: str
+
+
 def _pipeline_out(p: Any) -> PipelineOut:
     return PipelineOut(
         id=p.id,
@@ -121,12 +154,15 @@ def create_app(workspace: Path | None = None) -> FastAPI:
     pipelines = PipelineStore(db_path)
     runner = PipelineRunner(kernel, pipelines)
     knowledge = KnowledgeSearch(kernel, pipelines, projects)
+    models = kernel.models
+    model_client = ModelClient()
 
-    app = FastAPI(title="AEIOS API", version="0.6.0")
+    app = FastAPI(title="AEIOS API", version="0.7.0")
     app.state.kernel = kernel
     app.state.projects = projects
     app.state.pipelines = pipelines
     app.state.knowledge = knowledge
+    app.state.models = models
 
     app.add_middleware(
         CORSMiddleware,
@@ -271,5 +307,76 @@ def create_app(workspace: Path | None = None) -> FastAPI:
             count=len(results),
             results=[KnowledgeHitOut(**hit.to_dict()) for hit in results],
         )
+
+    @app.get("/v1/models", response_model=list[ModelOut])
+    def list_models(limit: int = 100) -> list[ModelOut]:
+        return [ModelOut(**m.public_dict()) for m in models.list(limit=limit)]
+
+    @app.post("/v1/models", response_model=ModelOut)
+    def create_model(body: ModelCreate) -> ModelOut:
+        try:
+            record = models.create(
+                name=body.name,
+                provider=body.provider,
+                model_id=body.model_id,
+                base_url=body.base_url,
+                api_key=body.api_key,
+                is_default=body.is_default,
+                enabled=body.enabled,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return ModelOut(**record.public_dict())
+
+    @app.get("/v1/models/{model_pk}", response_model=ModelOut)
+    def get_model(model_pk: str) -> ModelOut:
+        record = models.get(model_pk)
+        if not record:
+            raise HTTPException(status_code=404, detail="Model not found")
+        return ModelOut(**record.public_dict())
+
+    @app.patch("/v1/models/{model_pk}", response_model=ModelOut)
+    def update_model(model_pk: str, body: ModelUpdate) -> ModelOut:
+        record = models.update(
+            model_pk,
+            name=body.name,
+            model_id=body.model_id,
+            base_url=body.base_url,
+            api_key=body.api_key,
+            enabled=body.enabled,
+        )
+        if not record:
+            raise HTTPException(status_code=404, detail="Model not found")
+        return ModelOut(**record.public_dict())
+
+    @app.post("/v1/models/{model_pk}/default", response_model=ModelOut)
+    def set_default_model(model_pk: str) -> ModelOut:
+        record = models.set_default(model_pk)
+        if not record:
+            raise HTTPException(status_code=404, detail="Model not found")
+        return ModelOut(**record.public_dict())
+
+    @app.delete("/v1/models/{model_pk}")
+    def delete_model(model_pk: str) -> dict[str, bool]:
+        if not models.delete(model_pk):
+            raise HTTPException(status_code=404, detail="Model not found")
+        return {"ok": True}
+
+    @app.post("/v1/models/{model_pk}/test")
+    def test_model(model_pk: str) -> dict[str, Any]:
+        record = models.get(model_pk)
+        if not record:
+            raise HTTPException(status_code=404, detail="Model not found")
+        try:
+            reply = model_client.complete(
+                record,
+                system="Reply with exactly: ok",
+                user="ping",
+                temperature=0,
+                timeout=25.0,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return {"ok": True, "reply": reply[:500]}
 
     return app

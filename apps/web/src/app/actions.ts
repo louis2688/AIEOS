@@ -2,12 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  createModel,
   createPipeline,
   createProject,
   createTask,
+  deleteModel,
   deletePipeline,
   deleteProject,
   runPipeline,
+  setDefaultModel,
+  testModel,
 } from "@/lib/aeios";
 import { requireUser } from "@/lib/auth";
 import type { PipelineStep } from "@/lib/types";
@@ -170,6 +174,105 @@ export async function runPipelineAction(formData: FormData) {
     return {
       ok: false as const,
       error: err instanceof Error ? err.message : "Failed to run pipeline",
+    };
+  }
+}
+
+export async function createModelAction(formData: FormData) {
+  try {
+    await requireUser();
+  } catch {
+    return { ok: false as const, error: "Sign in required" };
+  }
+
+  const name = String(formData.get("name") || "").trim();
+  const provider = String(formData.get("provider") || "").trim();
+  const modelId = String(formData.get("model_id") || "").trim();
+  const baseUrl = String(formData.get("base_url") || "").trim() || null;
+  const apiKey = String(formData.get("api_key") || "").trim() || null;
+  const isDefault = String(formData.get("is_default") || "") === "on";
+
+  if (!name || !provider || !modelId) {
+    return { ok: false as const, error: "Name, provider, and model id are required" };
+  }
+
+  try {
+    const model = await createModel({
+      name,
+      provider,
+      model_id: modelId,
+      base_url: baseUrl,
+      api_key: apiKey,
+      is_default: isDefault,
+    });
+    revalidatePath("/models");
+    revalidatePath("/");
+    return { ok: true as const, model };
+  } catch (err) {
+    return {
+      ok: false as const,
+      error: err instanceof Error ? err.message : "Failed to create model",
+    };
+  }
+}
+
+export async function setDefaultModelAction(formData: FormData) {
+  try {
+    await requireUser();
+  } catch {
+    return { ok: false as const, error: "Sign in required" };
+  }
+  const id = String(formData.get("id") || "").trim();
+  if (!id) return { ok: false as const, error: "Missing id" };
+  try {
+    const model = await setDefaultModel(id);
+    revalidatePath("/models");
+    revalidatePath("/");
+    return { ok: true as const, model };
+  } catch (err) {
+    return {
+      ok: false as const,
+      error: err instanceof Error ? err.message : "Failed to set default",
+    };
+  }
+}
+
+export async function deleteModelAction(formData: FormData) {
+  try {
+    await requireUser();
+  } catch {
+    return { ok: false as const, error: "Sign in required" };
+  }
+  const id = String(formData.get("id") || "").trim();
+  if (!id) return { ok: false as const, error: "Missing id" };
+  try {
+    await deleteModel(id);
+    revalidatePath("/models");
+    revalidatePath("/");
+    return { ok: true as const };
+  } catch (err) {
+    return {
+      ok: false as const,
+      error: err instanceof Error ? err.message : "Failed to delete model",
+    };
+  }
+}
+
+export async function testModelAction(formData: FormData) {
+  try {
+    await requireUser();
+  } catch {
+    return { ok: false as const, error: "Sign in required" };
+  }
+  const id = String(formData.get("id") || "").trim();
+  if (!id) return { ok: false as const, error: "Missing id" };
+  try {
+    const result = await testModel(id);
+    return { ok: true as const, reply: result.reply };
+  } catch (err) {
+    return {
+      ok: false as const,
+      error: err instanceof Error ? err.message : "Model test failed",
     };
   }
 }

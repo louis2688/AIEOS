@@ -29,7 +29,7 @@
 - [x] Pipelines (create / run / history UI + API)
 - [x] Knowledge base search (API + UI)
 - [x] Clerk auth (dashboard + server actions)
-- [ ] Model library registry
+- [x] Model library registry (OpenAI / Anthropic / Ollama)
 
 ## Phase 3 — Hardening
 
@@ -57,3 +57,4 @@
 | 2026-07-15 | Pipelines: sequential kernel steps with `{input}` / `{previous}` templates |
 | 2026-07-15 | Knowledge search over tasks, pipelines, runs, projects, memory |
 | 2026-07-15 | Clerk auth for Next.js dashboard (FastAPI JWT later) |
+| 2026-07-15 | Model library: SQLite registry drives planner via ModelClient |
