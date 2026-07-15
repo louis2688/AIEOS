@@ -67,7 +67,7 @@ AIEOS/
 |-------|-------|--------|
 | 0 | Foundation + hello path | Done |
 | 1 | Kernel MVP (SQLite, shell, API, doctor) | Done |
-| 2 | Product surface (dashboard + projects + pipelines + knowledge) | In progress |
+| 2 | Product surface (dashboard + auth + models) | Done |
 | 3 | Hardening (security, MCP, observability) | Later |
 
 ## License

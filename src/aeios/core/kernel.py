@@ -14,6 +14,7 @@ from aeios.core.state_machine import InvalidTransition, transition
 from aeios.core.syscalls import Syscalls
 from aeios.core.types import Task, TaskStatus, ToolResult
 from aeios.memory.store import MemoryStore
+from aeios.persistence.models import ModelStore
 from aeios.persistence.sqlite_store import SqliteTaskStore
 from aeios.planning.planner import Planner
 from aeios.tools.base import BaseTool
@@ -45,13 +46,18 @@ class Kernel:
             self.settings.database_url, data_dir, self.workspace
         )
         self.store = SqliteTaskStore(db_path)
+        self.models = ModelStore(db_path)
+        self.models.seed_from_env(
+            openai_api_key=self.settings.openai_api_key,
+            anthropic_api_key=self.settings.anthropic_api_key,
+        )
 
         kernel_cfg = self.yaml.get("kernel", {})
         self.scheduler = Scheduler(
             max_concurrent=int(kernel_cfg.get("max_concurrent_tasks", 2))
         )
         self.default_agent = str(kernel_cfg.get("default_agent", "software_engineer"))
-        self.planner = Planner(self.settings)
+        self.planner = Planner(self.settings, model_store=self.models)
 
         self.tools: dict[str, BaseTool] = {}
         self.agents: dict[str, BaseAgent] = {}
@@ -206,7 +212,18 @@ class Kernel:
             "tasks_tracked": len(self.list_tasks(limit=1000)),
             "last_task_id": self.memory.get("last_task_id"),
             "db_path": str(self.store.db_path),
-            "llm_planner": bool(self.settings.openai_api_key),
+            "llm_planner": bool(self.models.get_default() or self.settings.openai_api_key),
+            "default_model": (
+                {
+                    "id": m.id,
+                    "name": m.name,
+                    "provider": m.provider,
+                    "model_id": m.model_id,
+                }
+                if (m := self.models.get_default())
+                else None
+            ),
+            "models_count": len(self.models.list(limit=1000)),
         }
 
     def doctor(self) -> dict[str, Any]:
@@ -225,10 +242,19 @@ class Kernel:
             "shell" in self.tools,
             "enabled" if "shell" in self.tools else "disabled (enable in configs/default.yaml)",
         )
+        default = self.models.get_default()
         add(
-            "openai_key",
-            bool(self.settings.openai_api_key),
-            "set" if self.settings.openai_api_key else "missing (deterministic planner active)",
+            "model_library",
+            default is not None or bool(self.settings.openai_api_key),
+            (
+                f"{default.provider}/{default.model_id}"
+                if default
+                else (
+                    "env openai fallback"
+                    if self.settings.openai_api_key
+                    else "empty (deterministic planner)"
+                )
+            ),
         )
 
         # Optional live probe for Qdrant — soft check
@@ -245,6 +271,10 @@ class Kernel:
         add("qdrant", qdrant_ok, qdrant_detail)
 
         return {
-            "ok": all(c["ok"] for c in checks if c["name"] != "qdrant" and c["name"] != "openai_key"),
+            "ok": all(
+                c["ok"]
+                for c in checks
+                if c["name"] not in {"qdrant", "model_library"}
+            ),
             "checks": checks,
         }

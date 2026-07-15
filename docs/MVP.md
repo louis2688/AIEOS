@@ -9,7 +9,7 @@ From the ChatGPT product design thread:
 | User profiles | Auth + identity (Clerk) | API + web |
 | Projects | Workspace containers for engineering work | Kernel + DB |
 | Pipelines | Multi-step agent workflows | Kernel + scheduler |
-| Model library | Provider/model registry | Drivers |
+| Model library | Provider/model registry (OpenAI / Anthropic / Ollama) | Drivers — **shipped** |
 | Knowledge base | Searchable project memory / docs | Memory + Qdrant |
 | Assistant engine | Chat UI wired to kernel | API + web |
 

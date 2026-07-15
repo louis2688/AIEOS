@@ -29,6 +29,10 @@ aeios serve --host 127.0.0.1 --port 8080
 | GET | `/v1/pipelines/{id}/runs` | List runs for a pipeline |
 | GET | `/v1/pipeline-runs/{id}` | Get one run |
 | GET | `/v1/knowledge/search?q=` | Search tasks / pipelines / runs / projects / memory |
+| GET/POST | `/v1/models` | List / register models |
+| PATCH/DELETE | `/v1/models/{id}` | Update / delete |
+| POST | `/v1/models/{id}/default` | Set planner default |
+| POST | `/v1/models/{id}/test` | Smoke-test provider |
 
 ## Example
 
