@@ -6,7 +6,11 @@ from typing import Any
 
 
 class MemoryStore:
-    """Phase 0 local memory: in-process dict + optional JSON persistence."""
+    """Phase 0 local memory: in-process dict + optional JSON persistence.
+
+    Keys are process-global (not per-owner). Knowledge search must exclude
+    shared memory for signed-in tenants; see KnowledgeSearch._search_memory.
+    """
 
     def __init__(self, data_dir: Path | None = None) -> None:
         self._data: dict[str, Any] = {}
@@ -24,6 +28,10 @@ class MemoryStore:
 
     def keys(self) -> list[str]:
         return sorted(self._data.keys())
+
+    def is_shared(self) -> bool:
+        """True — this store has no owner partitioning (Phase 0)."""
+        return True
 
     def append_history(self, entry: dict[str, Any]) -> None:
         history = self._data.setdefault("task_history", [])

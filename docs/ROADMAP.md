@@ -33,17 +33,17 @@
 
 ## Phase 3 — Hardening
 
-- [ ] Security: sandbox, RBAC, secrets hygiene
+- [x] Security: sandbox + secrets hygiene shipped; RBAC still deferred
 - [x] Observability MVP: request IDs + token/cost counters (`/v1/metrics`)
 - [x] Reflection / retry loop on tool failure
 - [x] MCP bridge for external tools
 - [x] Staging deploy path (Docker + Render Blueprint + Vercel) — see [`DEPLOY.md`](DEPLOY.md)
 - [x] Ops hardening docs (Render free Postgres expiry, cold starts, healthcheck, monitors)
-- [ ] CI (GitHub Actions)
+- [x] CI (GitHub Actions)
 
 ## Phase 4 — Scale
 
-- [ ] Multi-tenant isolation
+- [ ] Multi-tenant isolation — row isolation for projects/pipelines/tasks/models done; memory/vectors partial
 - [ ] gRPC between kernel services (if needed)
 - [ ] Plugin / driver marketplace
 - [ ] Optional Rust for hot paths (only after Python proves the model)
@@ -63,3 +63,4 @@
 | 2026-07-18 | Persistence: SQLite default; Postgres via DATABASE_URL + `aeios[postgres]` |
 | 2026-07-18 | Knowledge: optional Qdrant vector index (`aeios[vector]`); lexical fallback |
 | 2026-07-19 | Staging on Render free tier: upgrade Postgres before ~30-day expiry; expect web cold starts |
+| 2026-07-19 | Pipeline control + tenant hardening in progress; task cancel/SSE and per-user task/model isolation shipped |

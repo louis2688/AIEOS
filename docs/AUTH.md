@@ -59,7 +59,7 @@ Pytest sets `AEIOS_AUTH_DISABLED=1` in `tests/conftest.py` so existing API tests
 
 ## Per-user data isolation (Phase 4)
 
-Projects and pipelines are scoped to an **owner id**:
+Projects, pipelines, tasks, and model library rows are scoped to an **owner id**:
 
 | Mode | `owner_id` value | Source |
 |------|------------------|--------|
@@ -67,10 +67,10 @@ Projects and pipelines are scoped to an **owner id**:
 | Auth disabled | `"local"` | Fixed escape-hatch owner for CLI / pytest |
 
 - **Create** stamps `owner_id` from the request.
-- **List / get / delete** filter by that owner (cross-user access returns `404`, not the other user's row).
+- **List / get / delete / cancel** filter by that owner (cross-user access returns `404`, not the other user's row).
 - Pipeline runs inherit isolation via a join on the parent pipeline's `owner_id`.
-- Schema: `owner_id TEXT NOT NULL DEFAULT 'local'` on `projects` and `pipelines`. Existing SQLite/Postgres DBs get an additive `ALTER TABLE … ADD COLUMN` on store init (`SqlDb.ensure_column`).
-- Tasks / model library secrets are **not** owner-scoped in this phase (kernel-local still).
+- Schema: `owner_id TEXT NOT NULL DEFAULT 'local'` on `projects`, `pipelines`, `tasks`, and `models`. Existing SQLite/Postgres DBs get an additive `ALTER TABLE … ADD COLUMN` on store init (`SqlDb.ensure_column`).
+- Memory / knowledge vectors are only partially owner-scoped (shared lexical/vector hits may still cross users until hardening lands).
 
 ## Run
 

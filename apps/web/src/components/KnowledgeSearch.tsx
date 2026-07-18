@@ -7,6 +7,7 @@ const KIND_LABEL: Record<string, string> = {
   pipeline_run: "Run",
   project: "Project",
   memory: "Memory",
+  artifact: "Artifact",
 };
 
 export function KnowledgeSearchForm({ defaultQuery }: { defaultQuery: string }) {
@@ -14,7 +15,7 @@ export function KnowledgeSearchForm({ defaultQuery }: { defaultQuery: string }) 
     <form action="/knowledge" method="get" className="panel space-y-3">
       <h2 className="panel-title">Search knowledge</h2>
       <p className="text-sm text-[var(--muted)]">
-        Search tasks, pipeline runs, projects, and memory for past work.
+        Search tasks, pipeline runs, projects, artifacts, and memory for past work.
       </p>
       <div className="flex flex-col gap-3 md:flex-row">
         <input

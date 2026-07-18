@@ -218,6 +218,12 @@ export function cancelTask(id: string) {
   return request<Task>(`/v1/tasks/${id}/cancel`, { method: "POST" });
 }
 
+export function cancelPipelineRun(id: string) {
+  return request<PipelineRun>(`/v1/pipeline-runs/${id}/cancel`, {
+    method: "POST",
+  });
+}
+
 export function listProjects(limit = 30) {
   return request<Project[]>(`/v1/projects?limit=${limit}`);
 }
