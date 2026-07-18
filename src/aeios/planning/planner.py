@@ -59,6 +59,28 @@ class Planner:
             "Propose next implementation step",
         ]
 
+    def reflect(
+        self,
+        goal: str,
+        tool: str,
+        error: str,
+        attempt: int,
+        agent_role: str = "software_engineer",
+    ) -> tuple[str, list[str]]:
+        """Produce a short reflection and a revised plan after a tool failure."""
+        reflection = (
+            f"Tool '{tool}' failed on attempt {attempt}: {error}. "
+            "Re-planning with the same goal and retrying the step."
+        )
+        revised = self.deterministic_plan(goal, agent_role=agent_role)
+        # Surface the failure in the plan so task steps/audit stay inspectable.
+        revised = [
+            f"Reflect on {tool} failure: {error}",
+            *revised,
+            f"Retry {tool} (attempt {attempt + 1})",
+        ]
+        return reflection, revised
+
     def _resolve_model(self) -> ModelRecord | None:
         if self.model_store:
             model = self.model_store.get_default()

@@ -1,0 +1,35 @@
+# Staging stack: auth-required AEIOS API.
+# Usage:
+#   export CLERK_ISSUER=https://your-app.clerk.accounts.dev
+#   docker compose -f docker-compose.staging.yml up --build
+#
+# Do NOT set AEIOS_AUTH_DISABLED here. Secrets belong in the host env or a
+# local .env file that is never committed (see .env.staging.example).
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aeios-api:staging
+    ports:
+      - "${AEIOS_API_PORT:-8080}:8080"
+    environment:
+      AEIOS_ENV: staging
+      AEIOS_LOG_LEVEL: ${AEIOS_LOG_LEVEL:-INFO}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./data/aeios.db}
+      # Required — compose fails if unset:
+      CLERK_ISSUER: ${CLERK_ISSUER:?CLERK_ISSUER is required for staging}
+      CLERK_JWKS_URL: ${CLERK_JWKS_URL:-}
+      CLERK_AUDIENCE: ${CLERK_AUDIENCE:-}
+      # Optional LLM / secrets (never commit real values)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AEIOS_SECRETS_KEY: ${AEIOS_SECRETS_KEY:-}
+      # Explicitly omit AEIOS_AUTH_DISABLED — entrypoint rejects if set
+    volumes:
+      - aeios_staging_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  aeios_staging_data:

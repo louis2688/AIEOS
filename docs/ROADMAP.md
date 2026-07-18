@@ -34,9 +34,9 @@
 ## Phase 3 — Hardening
 
 - [ ] Security: sandbox, RBAC, secrets hygiene
-- [ ] Observability: traces, token/cost metrics
-- [ ] Reflection / retry loop on tool failure
-- [ ] MCP bridge for external tools
+- [x] Observability MVP: request IDs + token/cost counters (`/v1/metrics`)
+- [x] Reflection / retry loop on tool failure
+- [x] MCP bridge for external tools
 - [ ] CI (GitHub Actions) + staging deploy
 
 ## Phase 4 — Scale
@@ -58,3 +58,5 @@
 | 2026-07-15 | Knowledge search over tasks, pipelines, runs, projects, memory |
 | 2026-07-15 | Clerk auth for Next.js dashboard (FastAPI JWT later) |
 | 2026-07-15 | Model library: SQLite registry drives planner via ModelClient |
+| 2026-07-18 | Persistence: SQLite default; Postgres via DATABASE_URL + `aeios[postgres]` |
+| 2026-07-18 | Knowledge: optional Qdrant vector index (`aeios[vector]`); lexical fallback |

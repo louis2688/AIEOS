@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-import sqlite3
-import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+from aeios.persistence.db import SqlDb, coerce_db
 
 
 def utcnow_iso() -> str:
@@ -45,46 +45,44 @@ class PipelineRun:
 
 
 class PipelineStore:
-    """SQLite-backed pipelines and runs."""
+    """Pipelines + runs persistence (SQLite default, Postgres when configured)."""
 
-    def __init__(self, db_path: Path) -> None:
-        self.db_path = db_path
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
-        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
+    def __init__(self, db: SqlDb | Path) -> None:
+        self._db = coerce_db(db)
+        self.db_path = self._db.path or Path(self._db.display)
         self._init_schema()
 
     def _init_schema(self) -> None:
-        self._conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS pipelines (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                project_id TEXT,
-                steps TEXT NOT NULL DEFAULT '[]',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
+        with self._db.lock():
+            self._db.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS pipelines (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    project_id TEXT,
+                    steps TEXT NOT NULL DEFAULT '[]',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
 
-            CREATE TABLE IF NOT EXISTS pipeline_runs (
-                id TEXT PRIMARY KEY,
-                pipeline_id TEXT NOT NULL,
-                status TEXT NOT NULL,
-                input_goal TEXT NOT NULL,
-                step_results TEXT NOT NULL DEFAULT '[]',
-                result TEXT,
-                error TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
+                CREATE TABLE IF NOT EXISTS pipeline_runs (
+                    id TEXT PRIMARY KEY,
+                    pipeline_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    input_goal TEXT NOT NULL,
+                    step_results TEXT NOT NULL DEFAULT '[]',
+                    result TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
 
-            CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline
-                ON pipeline_runs(pipeline_id);
-            """
-        )
-        self._conn.commit()
+                CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline
+                    ON pipeline_runs(pipeline_id);
+                """
+            )
+            self._db.commit()
 
     def create(
         self,
@@ -105,8 +103,8 @@ class PipelineStore:
             created_at=now,
             updated_at=now,
         )
-        with self._lock:
-            self._conn.execute(
+        with self._db.lock():
+            self._db.execute(
                 """
                 INSERT INTO pipelines
                     (id, name, description, project_id, steps, created_at, updated_at)
@@ -122,33 +120,33 @@ class PipelineStore:
                     pipeline.updated_at,
                 ),
             )
-            self._conn.commit()
+            self._db.commit()
         return pipeline
 
     def list(self, limit: int = 50) -> list[Pipeline]:
-        with self._lock:
-            rows = self._conn.execute(
+        with self._db.lock():
+            rows = self._db.execute(
                 "SELECT * FROM pipelines ORDER BY created_at DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [self._pipeline_row(r) for r in rows]
 
     def get(self, pipeline_id: str) -> Pipeline | None:
-        with self._lock:
-            row = self._conn.execute(
+        with self._db.lock():
+            row = self._db.execute(
                 "SELECT * FROM pipelines WHERE id = ?", (pipeline_id,)
             ).fetchone()
         return self._pipeline_row(row) if row else None
 
     def delete(self, pipeline_id: str) -> bool:
-        with self._lock:
-            cur = self._conn.execute(
+        with self._db.lock():
+            cur = self._db.execute(
                 "DELETE FROM pipelines WHERE id = ?", (pipeline_id,)
             )
-            self._conn.execute(
+            self._db.execute(
                 "DELETE FROM pipeline_runs WHERE pipeline_id = ?", (pipeline_id,)
             )
-            self._conn.commit()
+            self._db.commit()
             return cur.rowcount > 0
 
     def create_run(self, pipeline_id: str, input_goal: str) -> PipelineRun:
@@ -162,8 +160,8 @@ class PipelineStore:
             created_at=now,
             updated_at=now,
         )
-        with self._lock:
-            self._conn.execute(
+        with self._db.lock():
+            self._db.execute(
                 """
                 INSERT INTO pipeline_runs
                     (id, pipeline_id, status, input_goal, step_results, result, error,
@@ -182,13 +180,13 @@ class PipelineStore:
                     run.updated_at,
                 ),
             )
-            self._conn.commit()
+            self._db.commit()
         return run
 
     def save_run(self, run: PipelineRun) -> None:
         run.updated_at = utcnow_iso()
-        with self._lock:
-            self._conn.execute(
+        with self._db.lock():
+            self._db.execute(
                 """
                 UPDATE pipeline_runs SET
                     status = ?,
@@ -207,19 +205,19 @@ class PipelineStore:
                     run.id,
                 ),
             )
-            self._conn.commit()
+            self._db.commit()
 
     def get_run(self, run_id: str) -> PipelineRun | None:
-        with self._lock:
-            row = self._conn.execute(
+        with self._db.lock():
+            row = self._db.execute(
                 "SELECT * FROM pipeline_runs WHERE id = ?", (run_id,)
             ).fetchone()
         return self._run_row(row) if row else None
 
     def list_runs(self, pipeline_id: str | None = None, limit: int = 50) -> list[PipelineRun]:
-        with self._lock:
+        with self._db.lock():
             if pipeline_id:
-                rows = self._conn.execute(
+                rows = self._db.execute(
                     """
                     SELECT * FROM pipeline_runs
                     WHERE pipeline_id = ?
@@ -228,14 +226,14 @@ class PipelineStore:
                     (pipeline_id, limit),
                 ).fetchall()
             else:
-                rows = self._conn.execute(
+                rows = self._db.execute(
                     "SELECT * FROM pipeline_runs ORDER BY created_at DESC LIMIT ?",
                     (limit,),
                 ).fetchall()
         return [self._run_row(r) for r in rows]
 
     @staticmethod
-    def _pipeline_row(row: sqlite3.Row) -> Pipeline:
+    def _pipeline_row(row) -> Pipeline:
         raw_steps = json.loads(row["steps"] or "[]")
         steps = [
             PipelineStep(
@@ -255,7 +253,7 @@ class PipelineStore:
         )
 
     @staticmethod
-    def _run_row(row: sqlite3.Row) -> PipelineRun:
+    def _run_row(row) -> PipelineRun:
         return PipelineRun(
             id=row["id"],
             pipeline_id=row["pipeline_id"],

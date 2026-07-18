@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from aeios.core.types import Task, ToolResult
+from aeios.core.types import Task, TaskStatus, ToolResult
 
 if TYPE_CHECKING:
     from aeios.core.kernel import Kernel
@@ -15,7 +15,12 @@ class Syscalls:
         self._kernel = kernel
 
     def execute_task(self, goal: str, agent: str | None = None) -> Task:
-        return self._kernel.run_goal(goal, agent=agent)
+        from aeios.observability.metrics import get_metrics
+
+        get_metrics().record_task_started()
+        task = self._kernel.run_goal(goal, agent=agent)
+        get_metrics().record_task_finished(ok=task.status == TaskStatus.COMPLETED)
+        return task
 
     def get_task(self, task_id: str) -> Task | None:
         return self._kernel.get_task(task_id)

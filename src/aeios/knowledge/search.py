@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from aeios.core.kernel import Kernel
+from aeios.knowledge.vectors import QdrantKnowledgeIndex
 from aeios.persistence.pipelines import PipelineStore
 from aeios.persistence.projects import ProjectStore
 
@@ -25,17 +26,25 @@ class KnowledgeHit:
 
 
 class KnowledgeSearch:
-    """Unified search across tasks, pipelines, runs, projects, and memory."""
+    """Unified search across tasks, pipelines, runs, projects, and memory.
+
+    Lexical search is always used. When a Qdrant index is configured and
+    reachable, memory (and optionally task) vectors are upserted lazily and
+    merged into results. Qdrant failures never raise — lexical remains.
+    """
 
     def __init__(
         self,
         kernel: Kernel,
         pipelines: PipelineStore,
         projects: ProjectStore,
+        *,
+        vector_index: QdrantKnowledgeIndex | None = None,
     ) -> None:
         self.kernel = kernel
         self.pipelines = pipelines
         self.projects = projects
+        self.vector_index = vector_index
 
     def search(
         self,
@@ -68,6 +77,11 @@ class KnowledgeSearch:
         if "memory" in allowed:
             hits.extend(self._search_memory(q))
 
+        # Optional vector enrichment (soft-fail inside index)
+        if self.vector_index is not None:
+            hits.extend(self._vector_hits(q, allowed))
+
+        hits = _dedupe_hits(hits)
         hits.sort(key=lambda h: (-h.score, h.kind, h.id))
         return hits[:limit]
 
@@ -214,6 +228,81 @@ class KnowledgeSearch:
                 )
             )
         return hits
+
+    def _vector_hits(self, query: str, allowed: set[str]) -> list[KnowledgeHit]:
+        idx = self.vector_index
+        if idx is None:
+            return []
+        # Lazy upsert of memory + recent tasks (best-effort)
+        try:
+            self._sync_vectors(allowed)
+            raw = idx.search(query, limit=20)
+        except Exception:  # noqa: BLE001
+            return []
+        hits: list[KnowledgeHit] = []
+        for v in raw:
+            if v.kind not in allowed or not v.id:
+                continue
+            hits.append(
+                KnowledgeHit(
+                    kind=v.kind,
+                    id=v.id,
+                    title=v.title,
+                    snippet=v.snippet,
+                    score=min(float(v.score) + 0.05, 1.5),
+                    href=v.href,
+                    meta={**(v.meta or {}), "source": "qdrant"},
+                )
+            )
+        return hits
+
+    def _sync_vectors(self, allowed: set[str]) -> None:
+        idx = self.vector_index
+        if idx is None or not idx.available:
+            return
+        if "memory" in allowed:
+            memory = self.kernel.memory
+            for key in memory.keys():
+                value = memory.get(key)
+                text = (
+                    json.dumps(value, default=str)
+                    if not isinstance(value, str)
+                    else value
+                )
+                idx.upsert_document(
+                    point_id=key,
+                    kind="memory",
+                    title=f"memory:{key}",
+                    text=text,
+                    meta={"key": key},
+                )
+        if "task" in allowed:
+            for task in self.kernel.store.list_tasks(limit=100):
+                idx.upsert_document(
+                    point_id=task.id,
+                    kind="task",
+                    title=(task.goal or task.id)[:120],
+                    text=" ".join(
+                        [
+                            task.goal or "",
+                            task.result or "",
+                            task.error or "",
+                            " ".join(task.plan or []),
+                        ]
+                    ),
+                    href=f"/tasks/{task.id}",
+                    meta={"status": task.status.value, "agent": task.agent},
+                )
+
+
+def _dedupe_hits(hits: list[KnowledgeHit]) -> list[KnowledgeHit]:
+    best: dict[tuple[str, str], KnowledgeHit] = {}
+    for h in hits:
+        key = (h.kind, h.id)
+        prev = best.get(key)
+        if prev is None or h.score > prev.score:
+            best[key] = h
+    return list(best.values())
 
 
 def _match(query: str, blob: str, preferred: str = "") -> tuple[float, str]:

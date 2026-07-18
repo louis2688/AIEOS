@@ -4,8 +4,12 @@ log_level: INFO
 kernel:
   max_concurrent_tasks: 2
   default_agent: software_engineer
+  # Retries after first tool failure before the step is considered failed
+  max_tool_retries: 2
 
 memory:
+  # local = JSON memory + lexical search; set backend: qdrant to prefer vectors
+  # when Qdrant is up (still soft-fails to lexical). Requires aeios[vector].
   backend: local  # local | sqlite | qdrant
   data_dir: ./data
 
@@ -20,6 +24,23 @@ tools:
     # omit allowlist to use defaults (ls, pwd, git status, python, pytest, ...)
   http:
     enabled: true
+  # External MCP servers — tools register as mcp_<server>_<tool> via call_tool.
+  # Requires: pip install 'aeios[mcp]'. Empty servers = no-op (kernel unchanged).
+  mcp:
+    enabled: true
+    name_prefix: mcp
+    timeout_sec: 30
+    servers: []
+    # Example stdio server:
+    # servers:
+    #   - name: filesystem
+    #     transport: stdio
+    #     command: npx
+    #     args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    # Example SSE/HTTP server:
+    #   - name: remote
+    #     transport: sse
+    #     url: http://127.0.0.1:8000/sse
 
 agents:
   echo:
