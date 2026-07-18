@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { StatusPill } from "@/components/StatusPill";
 import type { Task } from "@/lib/types";
 
 export function TaskTable({ tasks }: { tasks: Task[] }) {
@@ -45,19 +46,5 @@ export function TaskTable({ tasks }: { tasks: Task[] }) {
         </table>
       </div>
     </section>
-  );
-}
-
-function StatusPill({ status }: { status: string }) {
-  const tone =
-    status === "completed"
-      ? "text-[var(--accent)] border-[var(--accent)]/40"
-      : status === "failed"
-        ? "text-[var(--danger)] border-[var(--danger)]/40"
-        : "text-[var(--muted)] border-[var(--line)]";
-  return (
-    <span className={`inline-block rounded border px-2 py-0.5 font-mono text-[10px] uppercase ${tone}`}>
-      {status}
-    </span>
   );
 }

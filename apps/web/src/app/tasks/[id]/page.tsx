@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { StatusPill } from "@/components/StatusPill";
+import { TaskStepList } from "@/components/TaskStepList";
 import { getTask } from "@/lib/aeios";
 
 export default async function TaskDetailPage({
@@ -30,7 +32,12 @@ export default async function TaskDetailPage({
       </div>
 
       <section className="panel space-y-4">
-        <Meta label="Status" value={task.status} />
+        <div>
+          <p className="label">Status</p>
+          <div className="mt-1">
+            <StatusPill status={task.status} />
+          </div>
+        </div>
         <Meta label="Agent" value={task.agent || "—"} />
         <Meta label="Goal" value={task.goal} />
         {task.plan?.length ? (
@@ -41,16 +48,21 @@ export default async function TaskDetailPage({
         ) : null}
         <div>
           <p className="label">Result</p>
-          <pre className="mt-2 overflow-x-auto rounded-md border border-[var(--line)] bg-[var(--panel-2)] p-3 font-mono text-xs whitespace-pre-wrap text-[var(--ink)]">
-            {task.result || task.error || "—"}
-          </pre>
+          {task.error ? (
+            <p className="mt-2 text-sm leading-relaxed text-[var(--danger)]">{task.error}</p>
+          ) : null}
+          {task.result ? (
+            <pre className="mt-2 overflow-x-auto rounded-md border border-[var(--line)] bg-[var(--panel-2)] p-3 font-mono text-xs whitespace-pre-wrap text-[var(--ink)]">
+              {task.result}
+            </pre>
+          ) : !task.error ? (
+            <p className="mt-2 text-sm text-[var(--muted)]">—</p>
+          ) : null}
         </div>
         {task.steps?.length ? (
           <div>
             <p className="label">Steps</p>
-            <pre className="mt-2 overflow-x-auto rounded-md border border-[var(--line)] bg-[var(--panel-2)] p-3 font-mono text-xs whitespace-pre-wrap text-[var(--muted)]">
-              {JSON.stringify(task.steps, null, 2)}
-            </pre>
+            <TaskStepList steps={task.steps} />
           </div>
         ) : null}
       </section>
