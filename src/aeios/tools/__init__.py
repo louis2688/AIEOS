@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-__all__ = ["EchoTool", "FilesystemTool", "ShellTool"]
+__all__ = ["EchoTool", "FilesystemTool", "HttpTool", "ShellTool"]
 
 if TYPE_CHECKING:
     from aeios.tools.echo import EchoTool
     from aeios.tools.filesystem import FilesystemTool
+    from aeios.tools.http import HttpTool
     from aeios.tools.shell import ShellTool
 
 
@@ -21,6 +22,10 @@ def __getattr__(name: str) -> Any:
         from aeios.tools.filesystem import FilesystemTool
 
         return FilesystemTool
+    if name == "HttpTool":
+        from aeios.tools.http import HttpTool
+
+        return HttpTool
     if name == "ShellTool":
         from aeios.tools.shell import ShellTool
 

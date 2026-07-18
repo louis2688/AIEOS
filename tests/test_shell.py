@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+# Import kernel first to avoid tools ↔ core circular import during collection.
+from aeios.core.kernel import Kernel  # noqa: F401
 from aeios.tools.shell import ShellTool, normalize_binary
 
 

@@ -20,10 +20,7 @@ from aeios.persistence.models import ModelStore
 from aeios.persistence.sqlite_store import SqliteTaskStore
 from aeios.planning.planner import Planner
 from aeios.tools.base import BaseTool
-from aeios.tools.echo import EchoTool
-from aeios.tools.filesystem import FilesystemTool
 from aeios.tools.mcp import McpBridge, load_mcp_tools
-from aeios.tools.shell import ShellTool
 
 
 class Kernel:
@@ -91,6 +88,12 @@ class Kernel:
         self.store.audit("kernel_boot", detail={"workspace": str(self.workspace)})
 
     def _register_default_tools(self) -> None:
+        # Lazy imports avoid tools ↔ core circular import at module load time.
+        from aeios.tools.echo import EchoTool
+        from aeios.tools.filesystem import FilesystemTool
+        from aeios.tools.http import HttpTool
+        from aeios.tools.shell import ShellTool
+
         tools_cfg = self.yaml.get("tools", {})
         self.register_tool(EchoTool())
 
@@ -111,6 +114,15 @@ class Kernel:
                     root=self.workspace,
                     allowlist=set(allow) if allow else None,
                     timeout_sec=float(shell_cfg.get("timeout_sec", 15)),
+                )
+            )
+
+        http_cfg = tools_cfg.get("http", {})
+        if http_cfg.get("enabled", False):
+            self.register_tool(
+                HttpTool(
+                    timeout_sec=float(http_cfg.get("timeout_sec", 15)),
+                    max_bytes=int(http_cfg.get("max_bytes", 1_048_576)),
                 )
             )
 
@@ -346,6 +358,11 @@ class Kernel:
             "shell_tool",
             "shell" in self.tools,
             "enabled" if "shell" in self.tools else "disabled (enable in configs/default.yaml)",
+        )
+        add(
+            "http_tool",
+            "http" in self.tools,
+            "enabled" if "http" in self.tools else "disabled (enable in configs/default.yaml)",
         )
         mcp_tools = [n for n in self.tools if n.startswith("mcp_")]
         mcp_cfg = self.yaml.get("tools", {}).get("mcp") or {}

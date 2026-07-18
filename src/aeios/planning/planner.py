@@ -40,17 +40,29 @@ class Planner:
             return ["Acknowledge goal", "Call echo tool", "Return greeting"]
 
         if agent_role == "architect":
-            return [
+            steps = [
                 "Clarify constraints and success criteria",
+                "Inspect workspace module boundaries",
                 "Propose module boundaries",
                 "List risks and open questions",
             ]
+            if "http://" in lowered or "https://" in lowered:
+                steps.insert(2, "Fetch external reference over HTTP")
+            return steps
 
         if any(k in lowered for k in ("shell", "command", "pwd", "ls ")):
             return [
                 "Acknowledge goal",
                 "Run sandboxed shell inspection",
                 "Summarize findings",
+            ]
+
+        if any(k in lowered for k in ("http://", "https://", "fetch ", "download ")):
+            return [
+                "Acknowledge goal",
+                "Inspect workspace listing",
+                "Fetch URL with sandboxed HTTP tool",
+                "Summarize observations",
             ]
 
         return [
