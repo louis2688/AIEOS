@@ -1,11 +1,70 @@
 "use client";
 
+import { memo, useCallback, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
 import { createPipelineAction } from "@/app/actions";
 import type { PipelineStep, Project } from "@/lib/types";
 
 const defaultAgents = ["software_engineer", "architect", "echo"];
+
+type StepDraft = PipelineStep & { id: string };
+
+function toPayload(steps: StepDraft[]): PipelineStep[] {
+  return steps.map(({ agent, goal }) => ({ agent, goal }));
+}
+
+const PipelineStepRow = memo(function PipelineStepRow({
+  step,
+  index,
+  agents,
+  canRemove,
+  onAgentChange,
+  onGoalChange,
+  onRemove,
+}: {
+  step: StepDraft;
+  index: number;
+  agents: string[];
+  canRemove: boolean;
+  onAgentChange: (id: string, agent: string) => void;
+  onGoalChange: (id: string, goal: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <div className="space-y-2 rounded-md border border-[var(--line)] p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-mono text-[10px] text-[var(--muted)] uppercase">
+          Step {index + 1}
+        </p>
+        {canRemove ? (
+          <button
+            type="button"
+            className="font-mono text-[10px] text-[var(--danger)] uppercase"
+            onClick={() => onRemove(step.id)}
+          >
+            Remove
+          </button>
+        ) : null}
+      </div>
+      <select
+        className="field"
+        defaultValue={step.agent}
+        onChange={(e) => onAgentChange(step.id, e.target.value)}
+      >
+        {agents.map((a) => (
+          <option key={a} value={a}>
+            {a}
+          </option>
+        ))}
+      </select>
+      <textarea
+        className="field min-h-20"
+        defaultValue={step.goal}
+        onChange={(e) => onGoalChange(step.id, e.target.value)}
+      />
+    </div>
+  );
+});
 
 export function PipelineForm({
   projects,
@@ -15,14 +74,63 @@ export function PipelineForm({
   agents?: string[];
 }) {
   const router = useRouter();
+  const idPrefix = useId();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [steps, setSteps] = useState<PipelineStep[]>([
-    { agent: "architect", goal: "Outline architecture for: {input}" },
-    { agent: "software_engineer", goal: "Inspect workspace for: {input}" },
-  ]);
+  const stepsRef = useRef<StepDraft[]>([]);
+  const nextId = useRef(2);
+  const [steps, setSteps] = useState<StepDraft[]>(() => {
+    const initial: StepDraft[] = [
+      {
+        id: `${idPrefix}-0`,
+        agent: "architect",
+        goal: "Outline architecture for: {input}",
+      },
+      {
+        id: `${idPrefix}-1`,
+        agent: "software_engineer",
+        goal: "Inspect workspace for: {input}",
+      },
+    ];
+    // Ref is source of truth for field edits; state only tracks structure (add/remove).
+    stepsRef.current = initial;
+    return initial;
+  });
 
-  const stepsJson = useMemo(() => JSON.stringify(steps), [steps]);
+  const onAgentChange = useCallback((id: string, agent: string) => {
+    stepsRef.current = stepsRef.current.map((s) =>
+      s.id === id ? { ...s, agent } : s,
+    );
+  }, []);
+
+  const onGoalChange = useCallback((id: string, goal: string) => {
+    stepsRef.current = stepsRef.current.map((s) =>
+      s.id === id ? { ...s, goal } : s,
+    );
+  }, []);
+
+  const onRemove = useCallback((id: string) => {
+    setSteps(() => {
+      const next = stepsRef.current.filter((s) => s.id !== id);
+      stepsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const onAddStep = useCallback(() => {
+    setSteps(() => {
+      const next = [
+        ...stepsRef.current,
+        {
+          id: `${idPrefix}-${nextId.current++}`,
+          agent: "software_engineer",
+          goal: "{previous}",
+        },
+      ];
+      stepsRef.current = next;
+      return next;
+    });
+  }, [idPrefix]);
 
   return (
     <section className="panel">
@@ -35,6 +143,7 @@ export function PipelineForm({
         className="mt-4 space-y-4"
         action={(formData) => {
           setError(null);
+          formData.set("steps", JSON.stringify(toPayload(stepsRef.current)));
           startTransition(async () => {
             const result = await createPipelineAction(formData);
             if (!result.ok) {
@@ -46,7 +155,6 @@ export function PipelineForm({
           });
         }}
       >
-        <input type="hidden" name="steps" value={stepsJson} />
         <label className="block">
           <span className="label">Name</span>
           <input name="name" required className="field mt-1.5" placeholder="Design → Inspect" />
@@ -78,66 +186,22 @@ export function PipelineForm({
             <button
               type="button"
               className="font-mono text-[10px] tracking-wide text-[var(--accent)] uppercase"
-              onClick={() =>
-                setSteps((prev) => [
-                  ...prev,
-                  { agent: "software_engineer", goal: "{previous}" },
-                ])
-              }
+              onClick={onAddStep}
             >
               + Add step
             </button>
           </div>
           {steps.map((step, index) => (
-            <div
-              key={index}
-              className="space-y-2 rounded-md border border-[var(--line)] p-3"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-mono text-[10px] text-[var(--muted)] uppercase">
-                  Step {index + 1}
-                </p>
-                {steps.length > 1 ? (
-                  <button
-                    type="button"
-                    className="font-mono text-[10px] text-[var(--danger)] uppercase"
-                    onClick={() =>
-                      setSteps((prev) => prev.filter((_, i) => i !== index))
-                    }
-                  >
-                    Remove
-                  </button>
-                ) : null}
-              </div>
-              <select
-                className="field"
-                value={step.agent}
-                onChange={(e) =>
-                  setSteps((prev) =>
-                    prev.map((s, i) =>
-                      i === index ? { ...s, agent: e.target.value } : s,
-                    ),
-                  )
-                }
-              >
-                {agents.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))}
-              </select>
-              <textarea
-                className="field min-h-20"
-                value={step.goal}
-                onChange={(e) =>
-                  setSteps((prev) =>
-                    prev.map((s, i) =>
-                      i === index ? { ...s, goal: e.target.value } : s,
-                    ),
-                  )
-                }
-              />
-            </div>
+            <PipelineStepRow
+              key={step.id}
+              step={step}
+              index={index}
+              agents={agents}
+              canRemove={steps.length > 1}
+              onAgentChange={onAgentChange}
+              onGoalChange={onGoalChange}
+              onRemove={onRemove}
+            />
           ))}
         </div>
 
