@@ -18,13 +18,27 @@ export type KernelStatus = {
   models_count?: number;
 };
 
+export type TaskStep = {
+  step?: string;
+  status?: string;
+  tool?: string;
+  output?: unknown;
+  error?: string | null;
+  result?: string | null;
+  goal?: string;
+  path?: string;
+  url?: string;
+  reflection?: string;
+  [key: string]: unknown;
+};
+
 export type Task = {
   id: string;
   goal: string;
   status: string;
   agent: string | null;
   plan: string[];
-  steps: Record<string, unknown>[];
+  steps: TaskStep[];
   result: string | null;
   error: string | null;
 };
