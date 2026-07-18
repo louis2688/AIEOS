@@ -75,13 +75,34 @@ curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/v1/status
 
 ### Hosting on Render (free tier)
 
-Repo root includes [`render.yaml`](../render.yaml) for a Docker Web Service (`aeios-api`) with health check `/health`.
+Repo root includes [`render.yaml`](../render.yaml) for:
 
-1. Sign in at [dashboard.render.com](https://dashboard.render.com) (or `render login` with the [Render CLI](https://render.com/docs/cli)).
-2. **New → Blueprint** → connect `louis2688/AIEOS` (or your fork) → apply the blueprint.
-3. Confirm env: `CLERK_ISSUER`, `AEIOS_ENV=staging`. Leave `AEIOS_AUTH_DISABLED` unset.
-4. After deploy, note the public URL (e.g. `https://aeios-api.onrender.com`).
-5. Point Vercel at that URL (from `apps/web`):
+- Docker Web Service `aeios-api` (health check `/health`)
+- Render Postgres `aeios-db` (`plan: free`)
+- `DATABASE_URL` synced from the DB via Blueprint `fromDatabase` → `connectionString` (internal URL)
+
+The image installs `aeios[api,postgres]` so psycopg is available at runtime.
+
+#### Persistence: SQLite (ephemeral) vs Postgres
+
+| Backend | When | Durability on Render free web |
+|---------|------|-------------------------------|
+| SQLite (`sqlite:///./data/aeios.db`) | Local / Docker with a volume | **Ephemeral** — free Web Services have no disks; data is wiped on redeploy and spin-down |
+| Postgres (`DATABASE_URL` from `aeios-db`) | Staging / production on Render | **Durable** across web redeploys (schema is create-if-not-exists) |
+
+**Free Postgres caveat:** Render’s free Postgres instance type expires ~30 days after creation. For anything you need longer-term, upgrade the database plan in the dashboard (e.g. Basic / starter) or recreate and re-link `DATABASE_URL`.
+
+#### Apply / re-apply the Blueprint
+
+Render does not reliably provision new Blueprint resources from git push alone when the service already exists. Prefer the dashboard:
+
+1. Sign in at [dashboard.render.com](https://dashboard.render.com).
+2. **New → Blueprint** → connect `louis2688/AIEOS` (or your fork) → select the branch with the updated `render.yaml` → **Apply**.
+   - If a Blueprint already tracks this repo: open the Blueprint → **Manual Deploy** / sync so it picks up `databases:` and the new `DATABASE_URL` `fromDatabase` binding.
+3. Confirm resources: Postgres `aeios-db` and Web Service `aeios-api`.
+4. On `aeios-api` → **Environment**: `DATABASE_URL` should be set from the database (not a hard-coded SQLite URL). Also confirm `CLERK_ISSUER`, `AEIOS_ENV=staging`. Leave `AEIOS_AUTH_DISABLED` unset.
+5. Wait for a successful deploy, then note the public URL (e.g. `https://aeios-api.onrender.com`).
+6. Point Vercel at that URL (from `apps/web`):
 
    ```bash
    printf '%s' 'https://aeios-api.onrender.com' | npx vercel env add AEIOS_API_URL production --force --yes
@@ -89,7 +110,7 @@ Repo root includes [`render.yaml`](../render.yaml) for a Docker Web Service (`ae
    npx vercel --prod --yes
    ```
 
-6. Smoke checks:
+7. Smoke checks:
 
    ```bash
    curl -sS https://aeios-api.onrender.com/health
@@ -97,7 +118,16 @@ Repo root includes [`render.yaml`](../render.yaml) for a Docker Web Service (`ae
    # expect 401
    ```
 
-**Free-tier SQLite:** persistent disks are not available on the free plan. The default `DATABASE_URL=sqlite:///./data/aeios.db` is **ephemeral** — data is lost on redeploy and when the free instance spins down. For durable storage, upgrade the service and attach a disk at `/app/data`, or use Render Postgres / another hosted DB.
+#### Manual fallback (no Blueprint re-apply)
+
+If Blueprint sync cannot add the database (or you lack CLI/API access):
+
+1. Dashboard → **New → Postgres** → name `aeios-db` → Free (or Basic) → create. Prefer **private network only** if the only client is `aeios-api` on Render.
+2. Open `aeios-api` → **Environment** → set `DATABASE_URL` to the database’s **Internal Database URL** (Connect menu), or link the DB so Render injects it.
+3. Remove any old `DATABASE_URL=sqlite:///./data/aeios.db` override.
+4. **Manual Deploy** the web service so the image rebuilds with `.[api,postgres]` and picks up the new env.
+
+CLI note: `render` CLI / Blueprint apply typically needs a logged-in account or API key (`render login`). There is no unauthenticated way to provision the DB from this repo alone.
 
 **Cold starts:** free Web Services sleep after inactivity; the first request after sleep can take ~30–60s.
 

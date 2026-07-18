@@ -1,10 +1,15 @@
-# AEIOS FastAPI kernel — Render Blueprint (free tier).
-# Dashboard: New → Blueprint → connect this repo (or open after push).
+# AEIOS FastAPI kernel — Render Blueprint (free tier web + Postgres).
+# Dashboard: New → Blueprint → connect this repo (or re-apply after push).
 # Docs: docs/DEPLOY.md
 #
-# Free Web Services: no persistent disks. Default SQLite under /app/data is
-# ephemeral (wiped on redeploy / spin-down). Upgrade + attach a disk at
-# /app/data for durable storage, or point DATABASE_URL at managed Postgres.
+# Free Web Services have no persistent disks. Do NOT use SQLite on Render —
+# wire DATABASE_URL from the managed Postgres database below (fromDatabase).
+
+databases:
+  - name: aeios-db
+    plan: free
+    # Private network only — web service uses internal connectionString.
+    ipAllowList: []
 
 services:
   - type: web
@@ -20,7 +25,9 @@ services:
       - key: AEIOS_ENV
         value: staging
       - key: DATABASE_URL
-        value: sqlite:///./data/aeios.db
+        fromDatabase:
+          name: aeios-db
+          property: connectionString
       # Optional LLM / secrets — set in Dashboard (never commit):
       # - key: OPENAI_API_KEY
       #   sync: false
