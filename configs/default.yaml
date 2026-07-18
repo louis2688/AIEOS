@@ -24,6 +24,9 @@ tools:
     # omit allowlist to use defaults (ls, pwd, git status, python, pytest, ...)
   http:
     enabled: true
+    timeout_sec: 15
+    # Cap response body size (bytes); larger bodies are truncated
+    max_bytes: 1048576
   # External MCP servers — tools register as mcp_<server>_<tool> via call_tool.
   # Requires: pip install 'aeios[mcp]'. Empty servers = no-op (kernel unchanged).
   mcp:
