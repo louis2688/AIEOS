@@ -38,70 +38,74 @@ body {
   background: radial-gradient(ellipse at top, var(--glow), transparent 65%);
 }
 
-.panel {
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
-  border-radius: 0.75rem;
-  padding: 1.25rem;
-  backdrop-filter: blur(6px);
-}
+/* Component styles must stay in @layer so Tailwind utilities (e.g. md:w-56, flex-1) can override. */
+@layer components {
+  .panel {
+    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    backdrop-filter: blur(6px);
+  }
 
-.panel-title {
-  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
-  font-size: 1.25rem;
-  letter-spacing: -0.02em;
-  color: var(--ink);
-}
+  .panel-title {
+    font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+    font-size: 1.25rem;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
 
-.label {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
+  .label {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
 
-.field {
-  width: 100%;
-  border-radius: 0.5rem;
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--ink);
-  padding: 0.7rem 0.85rem;
-  font-size: 0.925rem;
-  outline: none;
-}
+  .field {
+    width: 100%;
+    min-width: 0;
+    border-radius: 0.5rem;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--ink);
+    padding: 0.7rem 0.85rem;
+    font-size: 0.925rem;
+    outline: none;
+  }
 
-.field:focus {
-  border-color: color-mix(in srgb, var(--accent) 70%, var(--line));
-  box-shadow: 0 0 0 3px var(--glow);
-}
+  .field:focus {
+    border-color: color-mix(in srgb, var(--accent) 70%, var(--line));
+    box-shadow: 0 0 0 3px var(--glow);
+  }
 
-.btn-primary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.5rem;
-  background: var(--accent);
-  color: #102014;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 0.75rem 1rem;
-  font-weight: 600;
-  transition: filter 120ms ease, transform 120ms ease;
-}
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    background: var(--accent);
+    color: #102014;
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    transition: filter 120ms ease, transform 120ms ease;
+  }
 
-.btn-primary:hover:not(:disabled) {
-  filter: brightness(1.05);
-}
+  .btn-primary:hover:not(:disabled) {
+    filter: brightness(1.05);
+  }
 
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
+  .btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 
-.font-display {
-  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  .font-display {
+    font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  }
 }
