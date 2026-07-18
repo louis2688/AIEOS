@@ -29,7 +29,7 @@ cd apps/web && npm install && npm run dev
 
 Auth setup: [docs/AUTH.md](docs/AUTH.md)
 
-Staging deploy (API Docker + web on Vercel, auth required): [docs/DEPLOY.md](docs/DEPLOY.md)
+Staging deploy (API Docker + web on Vercel, auth required): [docs/DEPLOY.md](docs/DEPLOY.md) — including [Render ops](docs/DEPLOY.md#ops-hardening-render) (free Postgres expiry, cold starts, healthcheck).
 
 Optional local infra (Postgres, Qdrant, MinIO):
 
@@ -66,7 +66,7 @@ AIEOS/
 - [MVP](docs/MVP.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Auth](docs/AUTH.md)
-- [Deploy (staging)](docs/DEPLOY.md)
+- [Deploy (staging) + Render ops](docs/DEPLOY.md#ops-hardening-render)
 - [Security](docs/SECURITY.md)
 
 ## Phase status

@@ -1,13 +1,16 @@
 # AEIOS FastAPI kernel — Render Blueprint (free tier web + Postgres).
 # Dashboard: New → Blueprint → connect this repo (or re-apply after push).
-# Docs: docs/DEPLOY.md
+# Ops runbook: docs/DEPLOY.md#ops-hardening-render
 #
 # Free Web Services have no persistent disks. Do NOT use SQLite on Render —
 # wire DATABASE_URL from the managed Postgres database below (fromDatabase).
+# Free Postgres expires ~30 days after creation — upgrade to Basic (or higher)
+# in the dashboard before expiry if you need durable staging data.
+# Free web sleeps when idle; first request after sleep can take ~30–60s.
 
 databases:
   - name: aeios-db
-    plan: free
+    plan: free  # temporary; upgrade in dashboard before ~30-day expiry
     # Private network only — web service uses internal connectionString.
     ipAllowList: []
 
@@ -15,10 +18,10 @@ services:
   - type: web
     name: aeios-api
     runtime: docker
-    plan: free
+    plan: free  # spins down when idle (cold starts)
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    healthCheckPath: /health
+    healthCheckPath: /health  # public liveness: GET /health → 200
     envVars:
       - key: CLERK_ISSUER
         value: https://pretty-leopard-94.clerk.accounts.dev
