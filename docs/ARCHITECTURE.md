@@ -56,6 +56,11 @@
 
 - Registered capabilities with typed inputs/outputs
 - Sandboxed shell (strict allowlist + cwd jail in Phase 1)
+- **MCP bridge** (`aeios.tools.mcp`): optional external MCP servers from YAML
+  `tools.mcp.servers`. Each remote tool is wrapped as a `BaseTool` named
+  `mcp_<server>_<tool>` and invoked only through the `call_tool` syscall.
+  Install optional deps with `pip install 'aeios[mcp]'`. No servers configured
+  → kernel boots unchanged.
 
 ### Syscalls (`aeios.core.syscalls`)
 
@@ -72,16 +77,50 @@ Stable contract:
 
 | Store | Role |
 |-------|------|
-| PostgreSQL | Projects, pipelines, users, audit log |
-| Qdrant | Vector memory / knowledge base |
-| S3/MinIO | Artifacts, uploads |
-| SQLite | Local-dev fallback for kernel state |
+| PostgreSQL | Projects, pipelines, tasks, models, audit log |
+| Qdrant | Optional vector memory / knowledge index |
+| S3/MinIO | Artifacts, uploads (not wired yet) |
+| SQLite | **Default** local-dev persistence |
+
+### Choosing a backend
+
+**SQLite (default)** — set `DATABASE_URL=sqlite:///./data/aeios.db` (or omit).
+No Docker required. Used by kernel + FastAPI for tasks, projects, pipelines,
+and the model library. Best for local CLI / dashboard development.
+
+**Postgres** — start Compose (`docker compose up -d postgres`), install
+`pip install 'aeios[postgres]'`, then:
+
+```bash
+DATABASE_URL=postgresql://aeios:aeios@localhost:5432/aeios
+```
+
+The same store interfaces open a thin `psycopg` connection; schema is
+`CREATE TABLE IF NOT EXISTS` on boot (MVP — no migration framework; do not
+rely on automatic upgrades across breaking schema changes).
+
+**Qdrant (optional)** — start Compose Qdrant, install `pip install 'aeios[vector]'`,
+keep `QDRANT_URL=http://localhost:6333` and `QDRANT_ENABLED=1`. Knowledge search
+upserts memory/task snippets with a local hash embedder and merges vector hits
+with lexical results. If Qdrant is down or the client is missing, search
+soft-fails and lexical search continues — the kernel never breaks.
+
+`aeios doctor` reports `sqlite` or `postgres` (whichever is active) and probes
+Qdrant as a soft check.
 
 ## Security boundaries (Phase 1+)
 
-- Tools run with cwd jail + command allowlist
-- Secrets only via env / secret store — never in memory dumps to logs
-- Auth (Clerk) at API/UI boundary, not inside kernel loop
+- Tools run with cwd jail + command allowlist (Windows-aware; see [`SECURITY.md`](SECURITY.md))
+- Model API keys: env override and/or `AEIOS_SECRETS_KEY` encrypt-at-rest — never returned raw from the API
+- Auth (Clerk JWT) at API/UI boundary, not inside kernel loop
+
+Full threat model: [`SECURITY.md`](SECURITY.md).
+
+## Observability (MVP)
+
+- **Request IDs** — `X-Request-ID` generated or echoed on every HTTP response (`aeios.observability`).
+- **Counters** — in-process metrics for LLM calls (tokens + rough cost placeholder), tool calls/failures, tasks, and HTTP volume.
+- **Export** — `GET /v1/metrics` (auth-protected when Clerk JWT is on). Not OpenTelemetry yet.
 
 ## Evolution
 

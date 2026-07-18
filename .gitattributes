@@ -1,0 +1,3 @@
+# Docker entrypoints must use LF on Windows checkouts
+scripts/docker-entrypoint.sh text eol=lf
+*.sh text eol=lf

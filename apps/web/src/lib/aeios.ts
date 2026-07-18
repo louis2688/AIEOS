@@ -1,3 +1,4 @@
+import { getSessionToken } from "./auth";
 import type {
   KernelStatus,
   KnowledgeSearchResult,
@@ -18,12 +19,23 @@ function apiBase(): string {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = await getSessionToken();
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  if (init?.headers) {
+    const incoming = new Headers(init.headers);
+    incoming.forEach((value, key) => {
+      headers[key] = value;
+    });
+  }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${apiBase()}${path}`, {
     ...init,
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers || {}),
-    },
+    headers,
     cache: "no-store",
   });
   if (!res.ok) {

@@ -7,10 +7,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from aeios.api.auth import ClerkAuthMiddleware, ClerkJWTVerifier
+from aeios.config import Settings, get_settings
 from aeios.core.kernel import Kernel
 from aeios.core.pipeline_runner import PipelineRunner
 from aeios.knowledge.search import KnowledgeSearch
 from aeios.models.client import ModelClient
+from aeios.observability.metrics import get_metrics
+from aeios.observability.request_id import RequestIdMiddleware
 from aeios.persistence.pipelines import PipelineStep, PipelineStore
 from aeios.persistence.projects import ProjectStore
 
@@ -146,14 +150,21 @@ def _run_out(r: Any) -> PipelineRunOut:
     return PipelineRunOut(**r.__dict__)
 
 
-def create_app(workspace: Path | None = None) -> FastAPI:
+def create_app(
+    workspace: Path | None = None,
+    *,
+    auth_settings: Settings | None = None,
+    auth_verifier: ClerkJWTVerifier | None = None,
+) -> FastAPI:
     root = workspace or Path.cwd()
     kernel = Kernel(workspace=root)
-    db_path = kernel.data_dir / "aeios.db"
-    projects = ProjectStore(db_path)
-    pipelines = PipelineStore(db_path)
+    # Share the kernel DB (sqlite path or postgres) with API stores.
+    projects = ProjectStore(kernel.db)
+    pipelines = PipelineStore(kernel.db)
     runner = PipelineRunner(kernel, pipelines)
-    knowledge = KnowledgeSearch(kernel, pipelines, projects)
+    knowledge = KnowledgeSearch(
+        kernel, pipelines, projects, vector_index=kernel.vector_index
+    )
     models = kernel.models
     model_client = ModelClient()
 
@@ -164,6 +175,13 @@ def create_app(workspace: Path | None = None) -> FastAPI:
     app.state.knowledge = knowledge
     app.state.models = models
 
+    # Innermost → outermost: auth, request-id, CORS (401s still get CORS headers).
+    app.add_middleware(
+        ClerkAuthMiddleware,
+        settings=auth_settings or get_settings(),
+        verifier=auth_verifier,
+    )
+    app.add_middleware(RequestIdMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -173,11 +191,17 @@ def create_app(workspace: Path | None = None) -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Request-ID"],
     )
 
     @app.get("/health")
     def health() -> dict[str, Any]:
         return {"ok": True, "service": "aeios"}
+
+    @app.get("/v1/metrics")
+    def metrics() -> dict[str, Any]:
+        """In-process counters (LLM tokens/cost placeholders, tools, tasks, HTTP)."""
+        return get_metrics().snapshot().to_dict()
 
     @app.get("/v1/status")
     def status() -> dict[str, Any]:
