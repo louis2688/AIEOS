@@ -327,3 +327,15 @@ def test_pipelines_scoped_to_jwt_sub(tmp_path: Path, monkeypatch, rsa_pair) -> N
         == 404
     )
     assert client.get(f"/v1/pipelines/{pipeline_id}", headers=headers_a).status_code == 200
+
+    # Alice runs; Bob cannot read that run by id.
+    run = client.post(
+        f"/v1/pipelines/{pipeline_id}/runs",
+        headers=headers_a,
+        json={"input_goal": "hello"},
+    )
+    assert run.status_code == 200
+    run_id = run.json()["id"]
+    assert client.get(f"/v1/pipeline-runs/{run_id}", headers=headers_a).status_code == 200
+    assert client.get(f"/v1/pipeline-runs/{run_id}", headers=headers_b).status_code == 404
+    assert client.get(f"/v1/pipelines/{pipeline_id}/runs", headers=headers_b).status_code == 404

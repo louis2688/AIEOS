@@ -266,6 +266,41 @@ class Kernel:
         return self.store.list_tasks(limit=limit)
 
     def run_goal(self, goal: str, agent: str | None = None) -> Task:
+        """Create and run a goal synchronously (blocks until finished)."""
+        task = self._prepare_task(goal, agent)
+        if task.status == TaskStatus.FAILED:
+            self._record_task_finished(ok=False)
+            return task
+        self.scheduler.enqueue(task)
+        self.scheduler.drain(lambda queued: self._execute_queued(queued))
+        return self.get_task(task.id) or task
+
+    def run_goal_async(self, goal: str, agent: str | None = None) -> Task:
+        """Create a task and execute it on a daemon thread; return immediately."""
+        import threading
+
+        task = self._prepare_task(goal, agent)
+        if task.status == TaskStatus.FAILED:
+            self._record_task_finished(ok=False)
+            return task
+        self.scheduler.enqueue(task)
+
+        def _bg() -> None:
+            self.scheduler.drain(lambda queued: self._execute_queued(queued))
+
+        threading.Thread(target=_bg, name=f"aeios-task-{task.id[:8]}", daemon=True).start()
+        return task
+
+    @staticmethod
+    def _record_task_finished(*, ok: bool) -> None:
+        try:
+            from aeios.observability.metrics import get_metrics
+
+            get_metrics().record_task_finished(ok=ok)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _prepare_task(self, goal: str, agent: str | None = None) -> Task:
         agent_name = agent or self.default_agent
         if agent_name not in self.agents:
             task = Task(goal=goal, status=TaskStatus.FAILED, agent=agent_name)
@@ -276,36 +311,35 @@ class Kernel:
         task = Task(goal=goal, status=TaskStatus.PENDING, agent=agent_name)
         self._persist(task, event="task_created")
         self.set_task_status(task, TaskStatus.PLANNING)
-        self.scheduler.enqueue(task)
+        return task
 
-        def worker(queued: Task) -> None:
-            self.set_task_status(queued, TaskStatus.RUNNING)
-            runner = self.agents[agent_name]
-            self._active_task = queued
-            try:
-                finished = runner.execute(queued)
-            finally:
-                self._active_task = None
-            # Agents may already set completed/failed; normalize if still running
-            if finished.status == TaskStatus.RUNNING:
-                self.set_task_status(finished, TaskStatus.COMPLETED)
-            else:
-                self._persist(finished, event=f"task_{finished.status.value}")
+    def _execute_queued(self, queued: Task) -> None:
+        agent_name = queued.agent or self.default_agent
+        self.set_task_status(queued, TaskStatus.RUNNING)
+        runner = self.agents[agent_name]
+        self._active_task = queued
+        try:
+            finished = runner.execute(queued)
+        finally:
+            self._active_task = None
+        # Agents may already set completed/failed; normalize if still running
+        if finished.status == TaskStatus.RUNNING:
+            self.set_task_status(finished, TaskStatus.COMPLETED)
+        else:
+            self._persist(finished, event=f"task_{finished.status.value}")
 
-            self.memory.append_history(
-                {
-                    "id": finished.id,
-                    "goal": finished.goal,
-                    "agent": finished.agent,
-                    "status": finished.status.value,
-                    "result": finished.result,
-                    "error": finished.error,
-                }
-            )
-            self.memory.set("last_task_id", finished.id)
-
-        self.scheduler.drain(worker)
-        return self.get_task(task.id) or task
+        self.memory.append_history(
+            {
+                "id": finished.id,
+                "goal": finished.goal,
+                "agent": finished.agent,
+                "status": finished.status.value,
+                "result": finished.result,
+                "error": finished.error,
+            }
+        )
+        self.memory.set("last_task_id", finished.id)
+        self._record_task_finished(ok=finished.status == TaskStatus.COMPLETED)
 
     def status(self) -> dict[str, Any]:
         return {

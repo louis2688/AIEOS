@@ -115,3 +115,12 @@ export type ModelRecord = {
   created_at: string;
   updated_at: string;
 };
+
+export type TaskArtifact = {
+  path: string;
+  exists: boolean;
+  bytes: number;
+  content: string | null;
+  source: string;
+  ephemeral_note: string | null;
+};
