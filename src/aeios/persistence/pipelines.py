@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from aeios.persistence.db import SqlDb, coerce_db
+from aeios.persistence.projects import LOCAL_OWNER_ID
 
 
 def utcnow_iso() -> str:
@@ -29,6 +30,7 @@ class Pipeline:
     steps: list[PipelineStep]
     created_at: str
     updated_at: str
+    owner_id: str = LOCAL_OWNER_ID
 
 
 @dataclass
@@ -61,6 +63,7 @@ class PipelineStore:
                     name TEXT NOT NULL,
                     description TEXT NOT NULL DEFAULT '',
                     project_id TEXT,
+                    owner_id TEXT NOT NULL DEFAULT 'local',
                     steps TEXT NOT NULL DEFAULT '[]',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -82,6 +85,12 @@ class PipelineStore:
                     ON pipeline_runs(pipeline_id);
                 """
             )
+            self._db.ensure_column(
+                "pipelines", "owner_id", "TEXT NOT NULL DEFAULT 'local'"
+            )
+            self._db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_pipelines_owner ON pipelines(owner_id)"
+            )
             self._db.commit()
 
     def create(
@@ -90,6 +99,8 @@ class PipelineStore:
         steps: list[PipelineStep],
         description: str = "",
         project_id: str | None = None,
+        *,
+        owner_id: str = LOCAL_OWNER_ID,
     ) -> Pipeline:
         if not steps:
             raise ValueError("Pipeline requires at least one step")
@@ -99,6 +110,7 @@ class PipelineStore:
             name=name.strip(),
             description=description.strip(),
             project_id=project_id,
+            owner_id=(owner_id or LOCAL_OWNER_ID).strip() or LOCAL_OWNER_ID,
             steps=steps,
             created_at=now,
             updated_at=now,
@@ -107,14 +119,15 @@ class PipelineStore:
             self._db.execute(
                 """
                 INSERT INTO pipelines
-                    (id, name, description, project_id, steps, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (id, name, description, project_id, owner_id, steps, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     pipeline.id,
                     pipeline.name,
                     pipeline.description,
                     pipeline.project_id,
+                    pipeline.owner_id,
                     json.dumps([s.__dict__ for s in pipeline.steps]),
                     pipeline.created_at,
                     pipeline.updated_at,
@@ -123,29 +136,52 @@ class PipelineStore:
             self._db.commit()
         return pipeline
 
-    def list(self, limit: int = 50) -> list[Pipeline]:
+    def list(self, limit: int = 50, *, owner_id: str | None = None) -> list[Pipeline]:
         with self._db.lock():
-            rows = self._db.execute(
-                "SELECT * FROM pipelines ORDER BY created_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            if owner_id is not None:
+                rows = self._db.execute(
+                    """
+                    SELECT * FROM pipelines
+                    WHERE owner_id = ?
+                    ORDER BY created_at DESC LIMIT ?
+                    """,
+                    (owner_id, limit),
+                ).fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM pipelines ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
         return [self._pipeline_row(r) for r in rows]
 
-    def get(self, pipeline_id: str) -> Pipeline | None:
+    def get(self, pipeline_id: str, *, owner_id: str | None = None) -> Pipeline | None:
         with self._db.lock():
-            row = self._db.execute(
-                "SELECT * FROM pipelines WHERE id = ?", (pipeline_id,)
-            ).fetchone()
+            if owner_id is not None:
+                row = self._db.execute(
+                    "SELECT * FROM pipelines WHERE id = ? AND owner_id = ?",
+                    (pipeline_id, owner_id),
+                ).fetchone()
+            else:
+                row = self._db.execute(
+                    "SELECT * FROM pipelines WHERE id = ?", (pipeline_id,)
+                ).fetchone()
         return self._pipeline_row(row) if row else None
 
-    def delete(self, pipeline_id: str) -> bool:
+    def delete(self, pipeline_id: str, *, owner_id: str | None = None) -> bool:
         with self._db.lock():
-            cur = self._db.execute(
-                "DELETE FROM pipelines WHERE id = ?", (pipeline_id,)
-            )
-            self._db.execute(
-                "DELETE FROM pipeline_runs WHERE pipeline_id = ?", (pipeline_id,)
-            )
+            if owner_id is not None:
+                cur = self._db.execute(
+                    "DELETE FROM pipelines WHERE id = ? AND owner_id = ?",
+                    (pipeline_id, owner_id),
+                )
+            else:
+                cur = self._db.execute(
+                    "DELETE FROM pipelines WHERE id = ?", (pipeline_id,)
+                )
+            if cur.rowcount > 0:
+                self._db.execute(
+                    "DELETE FROM pipeline_runs WHERE pipeline_id = ?", (pipeline_id,)
+                )
             self._db.commit()
             return cur.rowcount > 0
 
@@ -207,16 +243,44 @@ class PipelineStore:
             )
             self._db.commit()
 
-    def get_run(self, run_id: str) -> PipelineRun | None:
+    def get_run(
+        self, run_id: str, *, owner_id: str | None = None
+    ) -> PipelineRun | None:
         with self._db.lock():
-            row = self._db.execute(
-                "SELECT * FROM pipeline_runs WHERE id = ?", (run_id,)
-            ).fetchone()
+            if owner_id is not None:
+                row = self._db.execute(
+                    """
+                    SELECT pr.* FROM pipeline_runs pr
+                    JOIN pipelines p ON p.id = pr.pipeline_id
+                    WHERE pr.id = ? AND p.owner_id = ?
+                    """,
+                    (run_id, owner_id),
+                ).fetchone()
+            else:
+                row = self._db.execute(
+                    "SELECT * FROM pipeline_runs WHERE id = ?", (run_id,)
+                ).fetchone()
         return self._run_row(row) if row else None
 
-    def list_runs(self, pipeline_id: str | None = None, limit: int = 50) -> list[PipelineRun]:
+    def list_runs(
+        self,
+        pipeline_id: str | None = None,
+        limit: int = 50,
+        *,
+        owner_id: str | None = None,
+    ) -> list[PipelineRun]:
         with self._db.lock():
-            if pipeline_id:
+            if pipeline_id and owner_id is not None:
+                rows = self._db.execute(
+                    """
+                    SELECT pr.* FROM pipeline_runs pr
+                    JOIN pipelines p ON p.id = pr.pipeline_id
+                    WHERE pr.pipeline_id = ? AND p.owner_id = ?
+                    ORDER BY pr.created_at DESC LIMIT ?
+                    """,
+                    (pipeline_id, owner_id, limit),
+                ).fetchall()
+            elif pipeline_id:
                 rows = self._db.execute(
                     """
                     SELECT * FROM pipeline_runs
@@ -224,6 +288,16 @@ class PipelineStore:
                     ORDER BY created_at DESC LIMIT ?
                     """,
                     (pipeline_id, limit),
+                ).fetchall()
+            elif owner_id is not None:
+                rows = self._db.execute(
+                    """
+                    SELECT pr.* FROM pipeline_runs pr
+                    JOIN pipelines p ON p.id = pr.pipeline_id
+                    WHERE p.owner_id = ?
+                    ORDER BY pr.created_at DESC LIMIT ?
+                    """,
+                    (owner_id, limit),
                 ).fetchall()
             else:
                 rows = self._db.execute(
@@ -247,6 +321,7 @@ class PipelineStore:
             name=row["name"],
             description=row["description"],
             project_id=row["project_id"],
+            owner_id=row.get("owner_id") or LOCAL_OWNER_ID,
             steps=steps,
             created_at=row["created_at"],
             updated_at=row["updated_at"],

@@ -3,11 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from aeios.api.auth import ClerkAuthMiddleware, ClerkJWTVerifier
+from aeios.api.auth import ClerkAuthMiddleware, ClerkJWTVerifier, resolve_owner_id
 from aeios.config import Settings, get_settings
 from aeios.core.kernel import Kernel
 from aeios.core.pipeline_runner import PipelineRunner
@@ -44,6 +44,7 @@ class ProjectOut(BaseModel):
     id: str
     name: str
     description: str
+    owner_id: str
     created_at: str
     updated_at: str
 
@@ -65,6 +66,7 @@ class PipelineOut(BaseModel):
     name: str
     description: str
     project_id: str | None
+    owner_id: str
     steps: list[PipelineStepIn]
     created_at: str
     updated_at: str
@@ -140,6 +142,7 @@ def _pipeline_out(p: Any) -> PipelineOut:
         name=p.name,
         description=p.description,
         project_id=p.project_id,
+        owner_id=p.owner_id,
         steps=[PipelineStepIn(goal=s.goal, agent=s.agent) for s in p.steps],
         created_at=p.created_at,
         updated_at=p.updated_at,
@@ -236,34 +239,43 @@ def create_app(
         return TaskOut(**task.model_dump(mode="json"))
 
     @app.get("/v1/projects", response_model=list[ProjectOut])
-    def list_projects(limit: int = 50) -> list[ProjectOut]:
-        return [ProjectOut(**p.__dict__) for p in projects.list(limit=limit)]
+    def list_projects(request: Request, limit: int = 50) -> list[ProjectOut]:
+        owner = resolve_owner_id(request)
+        return [
+            ProjectOut(**p.__dict__)
+            for p in projects.list(limit=limit, owner_id=owner)
+        ]
 
     @app.post("/v1/projects", response_model=ProjectOut)
-    def create_project(body: ProjectCreate) -> ProjectOut:
-        project = projects.create(body.name, body.description)
+    def create_project(request: Request, body: ProjectCreate) -> ProjectOut:
+        owner = resolve_owner_id(request)
+        project = projects.create(body.name, body.description, owner_id=owner)
         return ProjectOut(**project.__dict__)
 
     @app.get("/v1/projects/{project_id}", response_model=ProjectOut)
-    def get_project(project_id: str) -> ProjectOut:
-        project = projects.get(project_id)
+    def get_project(request: Request, project_id: str) -> ProjectOut:
+        owner = resolve_owner_id(request)
+        project = projects.get(project_id, owner_id=owner)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         return ProjectOut(**project.__dict__)
 
     @app.delete("/v1/projects/{project_id}")
-    def delete_project(project_id: str) -> dict[str, bool]:
-        if not projects.delete(project_id):
+    def delete_project(request: Request, project_id: str) -> dict[str, bool]:
+        owner = resolve_owner_id(request)
+        if not projects.delete(project_id, owner_id=owner):
             raise HTTPException(status_code=404, detail="Project not found")
         return {"ok": True}
 
     @app.get("/v1/pipelines", response_model=list[PipelineOut])
-    def list_pipelines(limit: int = 50) -> list[PipelineOut]:
-        return [_pipeline_out(p) for p in pipelines.list(limit=limit)]
+    def list_pipelines(request: Request, limit: int = 50) -> list[PipelineOut]:
+        owner = resolve_owner_id(request)
+        return [_pipeline_out(p) for p in pipelines.list(limit=limit, owner_id=owner)]
 
     @app.post("/v1/pipelines", response_model=PipelineOut)
-    def create_pipeline(body: PipelineCreate) -> PipelineOut:
-        if body.project_id and not projects.get(body.project_id):
+    def create_pipeline(request: Request, body: PipelineCreate) -> PipelineOut:
+        owner = resolve_owner_id(request)
+        if body.project_id and not projects.get(body.project_id, owner_id=owner):
             raise HTTPException(status_code=400, detail="Unknown project_id")
         try:
             pipeline = pipelines.create(
@@ -273,51 +285,72 @@ def create_app(
                 steps=[
                     PipelineStep(goal=s.goal, agent=s.agent) for s in body.steps
                 ],
+                owner_id=owner,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return _pipeline_out(pipeline)
 
     @app.get("/v1/pipelines/{pipeline_id}", response_model=PipelineOut)
-    def get_pipeline(pipeline_id: str) -> PipelineOut:
-        pipeline = pipelines.get(pipeline_id)
+    def get_pipeline(request: Request, pipeline_id: str) -> PipelineOut:
+        owner = resolve_owner_id(request)
+        pipeline = pipelines.get(pipeline_id, owner_id=owner)
         if not pipeline:
             raise HTTPException(status_code=404, detail="Pipeline not found")
         return _pipeline_out(pipeline)
 
     @app.delete("/v1/pipelines/{pipeline_id}")
-    def delete_pipeline(pipeline_id: str) -> dict[str, bool]:
-        if not pipelines.delete(pipeline_id):
+    def delete_pipeline(request: Request, pipeline_id: str) -> dict[str, bool]:
+        owner = resolve_owner_id(request)
+        if not pipelines.delete(pipeline_id, owner_id=owner):
             raise HTTPException(status_code=404, detail="Pipeline not found")
         return {"ok": True}
 
     @app.post("/v1/pipelines/{pipeline_id}/runs", response_model=PipelineRunOut)
-    def run_pipeline(pipeline_id: str, body: PipelineRunCreate) -> PipelineRunOut:
-        pipeline = pipelines.get(pipeline_id)
+    def run_pipeline(
+        request: Request, pipeline_id: str, body: PipelineRunCreate
+    ) -> PipelineRunOut:
+        owner = resolve_owner_id(request)
+        pipeline = pipelines.get(pipeline_id, owner_id=owner)
         if not pipeline:
             raise HTTPException(status_code=404, detail="Pipeline not found")
         run = runner.run(pipeline, body.input_goal)
         return _run_out(run)
 
     @app.get("/v1/pipelines/{pipeline_id}/runs", response_model=list[PipelineRunOut])
-    def list_pipeline_runs(pipeline_id: str, limit: int = 50) -> list[PipelineRunOut]:
-        if not pipelines.get(pipeline_id):
+    def list_pipeline_runs(
+        request: Request, pipeline_id: str, limit: int = 50
+    ) -> list[PipelineRunOut]:
+        owner = resolve_owner_id(request)
+        if not pipelines.get(pipeline_id, owner_id=owner):
             raise HTTPException(status_code=404, detail="Pipeline not found")
-        return [_run_out(r) for r in pipelines.list_runs(pipeline_id=pipeline_id, limit=limit)]
+        return [
+            _run_out(r)
+            for r in pipelines.list_runs(
+                pipeline_id=pipeline_id, limit=limit, owner_id=owner
+            )
+        ]
 
     @app.get("/v1/pipeline-runs/{run_id}", response_model=PipelineRunOut)
-    def get_pipeline_run(run_id: str) -> PipelineRunOut:
-        run = pipelines.get_run(run_id)
+    def get_pipeline_run(request: Request, run_id: str) -> PipelineRunOut:
+        owner = resolve_owner_id(request)
+        run = pipelines.get_run(run_id, owner_id=owner)
         if not run:
             raise HTTPException(status_code=404, detail="Pipeline run not found")
         return _run_out(run)
 
     @app.get("/v1/pipeline-runs", response_model=list[PipelineRunOut])
-    def list_all_pipeline_runs(limit: int = 50) -> list[PipelineRunOut]:
-        return [_run_out(r) for r in pipelines.list_runs(limit=limit)]
+    def list_all_pipeline_runs(
+        request: Request, limit: int = 50
+    ) -> list[PipelineRunOut]:
+        owner = resolve_owner_id(request)
+        return [
+            _run_out(r) for r in pipelines.list_runs(limit=limit, owner_id=owner)
+        ]
 
     @app.get("/v1/knowledge/search", response_model=KnowledgeSearchOut)
     def knowledge_search(
+        request: Request,
         q: str = "",
         limit: int = 30,
         kinds: str | None = None,
@@ -328,7 +361,13 @@ def create_app(
         kind_set = None
         if kinds:
             kind_set = {k.strip() for k in kinds.split(",") if k.strip()}
-        results = knowledge.search(query, limit=max(1, min(limit, 100)), kinds=kind_set)
+        owner = resolve_owner_id(request)
+        results = knowledge.search(
+            query,
+            limit=max(1, min(limit, 100)),
+            kinds=kind_set,
+            owner_id=owner,
+        )
         return KnowledgeSearchOut(
             query=query,
             count=len(results),

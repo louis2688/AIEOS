@@ -71,11 +71,17 @@ def rsa_pair():
     return private_key, {"keys": [jwk]}
 
 
-def _make_token(private_key, *, expires_in: int = 300, kid: str = KID) -> str:
+def _make_token(
+    private_key,
+    *,
+    expires_in: int = 300,
+    kid: str = KID,
+    sub: str = "user_test_123",
+) -> str:
     now = int(time.time())
     return jwt.encode(
         {
-            "sub": "user_test_123",
+            "sub": sub,
             "iss": ISSUER,
             "iat": now,
             "nbf": now,
@@ -239,3 +245,85 @@ def test_jwks_json_roundtrip_helper(rsa_pair) -> None:
     token = _make_token(private_key)
     decoded = jwt.decode(token, public_key, algorithms=["RS256"], issuer=ISSUER)
     assert decoded["sub"] == "user_test_123"
+
+
+def test_projects_scoped_to_jwt_sub(tmp_path: Path, monkeypatch, rsa_pair) -> None:
+    """Two Clerk users must not see each other's projects."""
+    monkeypatch.chdir(tmp_path)
+    _write_config(tmp_path)
+    private_key, jwks = rsa_pair
+    client = TestClient(
+        create_app(
+            workspace=tmp_path,
+            auth_settings=_enabled_settings(),
+            auth_verifier=_verifier(jwks),
+        )
+    )
+    token_a = _make_token(private_key, sub="user_alice")
+    token_b = _make_token(private_key, sub="user_bob")
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    created = client.post(
+        "/v1/projects",
+        headers=headers_a,
+        json={"name": "Alice Only", "description": "private"},
+    )
+    assert created.status_code == 200
+    assert created.json()["owner_id"] == "user_alice"
+    project_id = created.json()["id"]
+
+    listed_a = client.get("/v1/projects", headers=headers_a)
+    assert listed_a.status_code == 200
+    assert any(p["id"] == project_id for p in listed_a.json())
+
+    listed_b = client.get("/v1/projects", headers=headers_b)
+    assert listed_b.status_code == 200
+    assert listed_b.json() == []
+
+    assert client.get(f"/v1/projects/{project_id}", headers=headers_b).status_code == 404
+    assert client.delete(f"/v1/projects/{project_id}", headers=headers_b).status_code == 404
+    assert client.get(f"/v1/projects/{project_id}", headers=headers_a).status_code == 200
+
+
+def test_pipelines_scoped_to_jwt_sub(tmp_path: Path, monkeypatch, rsa_pair) -> None:
+    monkeypatch.chdir(tmp_path)
+    _write_config(tmp_path)
+    private_key, jwks = rsa_pair
+    client = TestClient(
+        create_app(
+            workspace=tmp_path,
+            auth_settings=_enabled_settings(),
+            auth_verifier=_verifier(jwks),
+        )
+    )
+    headers_a = {
+        "Authorization": f"Bearer {_make_token(private_key, sub='user_alice')}"
+    }
+    headers_b = {
+        "Authorization": f"Bearer {_make_token(private_key, sub='user_bob')}"
+    }
+
+    created = client.post(
+        "/v1/pipelines",
+        headers=headers_a,
+        json={
+            "name": "Alice Pipe",
+            "steps": [{"goal": "hello", "agent": "echo"}],
+        },
+    )
+    assert created.status_code == 200
+    assert created.json()["owner_id"] == "user_alice"
+    pipeline_id = created.json()["id"]
+
+    assert client.get("/v1/pipelines", headers=headers_b).json() == []
+    assert client.get(f"/v1/pipelines/{pipeline_id}", headers=headers_b).status_code == 404
+    assert (
+        client.post(
+            f"/v1/pipelines/{pipeline_id}/runs",
+            headers=headers_b,
+            json={"input_goal": "x"},
+        ).status_code
+        == 404
+    )
+    assert client.get(f"/v1/pipelines/{pipeline_id}", headers=headers_a).status_code == 200

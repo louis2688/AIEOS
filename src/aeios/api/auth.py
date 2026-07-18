@@ -19,6 +19,21 @@ logger = logging.getLogger(__name__)
 # Public paths that never require a Bearer token.
 PUBLIC_PATHS = frozenset({"/health", "/docs", "/openapi.json", "/redoc"})
 
+# Owner stamped on rows when auth is disabled (must match ProjectStore / PipelineStore).
+LOCAL_OWNER_ID = "local"
+
+
+def resolve_owner_id(request: Request) -> str:
+    """Return the Clerk ``sub`` (or local escape-hatch owner) for row scoping.
+
+    Middleware sets ``request.state.user_id`` from verified JWT claims when auth
+    is enabled, or to ``LOCAL_OWNER_ID`` (``"local"``) when auth is disabled.
+    """
+    user_id = getattr(request.state, "user_id", None)
+    if isinstance(user_id, str) and user_id.strip():
+        return user_id.strip()
+    return LOCAL_OWNER_ID
+
 
 def auth_is_enabled(settings: Settings | None = None) -> bool:
     """Return True when JWT validation should run.
@@ -188,7 +203,13 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         path = request.url.path
-        if path in PUBLIC_PATHS or not auth_is_enabled(self.settings):
+        if path in PUBLIC_PATHS:
+            return await call_next(request)
+
+        if not auth_is_enabled(self.settings):
+            # Escape hatch (AEIOS_AUTH_DISABLED / no Clerk config): fixed local owner.
+            request.state.user_id = LOCAL_OWNER_ID
+            request.state.clerk_claims = None
             return await call_next(request)
 
         verifier = self._get_verifier()
@@ -216,6 +237,14 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        sub = claims.get("sub")
+        if not isinstance(sub, str) or not sub.strip():
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Token missing subject (sub)"},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         request.state.clerk_claims = claims
-        request.state.user_id = claims.get("sub")
+        request.state.user_id = sub.strip()
         return await call_next(request)
