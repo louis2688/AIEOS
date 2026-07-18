@@ -1,0 +1,29 @@
+# AEIOS FastAPI kernel — Render Blueprint (free tier).
+# Dashboard: New → Blueprint → connect this repo (or open after push).
+# Docs: docs/DEPLOY.md
+#
+# Free Web Services: no persistent disks. Default SQLite under /app/data is
+# ephemeral (wiped on redeploy / spin-down). Upgrade + attach a disk at
+# /app/data for durable storage, or point DATABASE_URL at managed Postgres.
+
+services:
+  - type: web
+    name: aeios-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: CLERK_ISSUER
+        value: https://pretty-leopard-94.clerk.accounts.dev
+      - key: AEIOS_ENV
+        value: staging
+      - key: DATABASE_URL
+        value: sqlite:///./data/aeios.db
+      # Optional LLM / secrets — set in Dashboard (never commit):
+      # - key: OPENAI_API_KEY
+      #   sync: false
+      # - key: AEIOS_SECRETS_KEY
+      #   sync: false
+      # Do NOT set AEIOS_AUTH_DISABLED (entrypoint refuses to start).
