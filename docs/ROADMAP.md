@@ -37,7 +37,9 @@
 - [x] Observability MVP: request IDs + token/cost counters (`/v1/metrics`)
 - [x] Reflection / retry loop on tool failure
 - [x] MCP bridge for external tools
-- [ ] CI (GitHub Actions) + staging deploy
+- [x] Staging deploy path (Docker + Render Blueprint + Vercel) — see [`DEPLOY.md`](DEPLOY.md)
+- [x] Ops hardening docs (Render free Postgres expiry, cold starts, healthcheck, monitors)
+- [ ] CI (GitHub Actions)
 
 ## Phase 4 — Scale
 
@@ -60,3 +62,4 @@
 | 2026-07-15 | Model library: SQLite registry drives planner via ModelClient |
 | 2026-07-18 | Persistence: SQLite default; Postgres via DATABASE_URL + `aeios[postgres]` |
 | 2026-07-18 | Knowledge: optional Qdrant vector index (`aeios[vector]`); lexical fallback |
+| 2026-07-19 | Staging on Render free tier: upgrade Postgres before ~30-day expiry; expect web cold starts |

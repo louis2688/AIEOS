@@ -129,7 +129,79 @@ If Blueprint sync cannot add the database (or you lack CLI/API access):
 
 CLI note: `render` CLI / Blueprint apply typically needs a logged-in account or API key (`render login`). There is no unauthenticated way to provision the DB from this repo alone.
 
-**Cold starts:** free Web Services sleep after inactivity; the first request after sleep can take ~30–60s.
+## Ops hardening (Render)
+
+Runbook for keeping staging alive on free-tier Render. Blueprint: [`render.yaml`](../render.yaml).
+
+### Free Postgres expiry (~30 days)
+
+Render’s **free** Postgres plan is temporary: instances expire about **30 days after creation**. After expiry the DB is deleted — `DATABASE_URL` breaks and the API cannot persist tasks/projects.
+
+| Before expiry | Action |
+|---------------|--------|
+| ~7 days left | Decide: upgrade or accept recreate + data loss |
+| Keep data | Dashboard → `aeios-db` → **Upgrade** to a paid plan (e.g. **Basic**) |
+| Accept wipe | Create a new Postgres, re-link `DATABASE_URL` on `aeios-api`, redeploy |
+
+Upgrade path (recommended for anything you dogfood longer than a month):
+
+1. [dashboard.render.com](https://dashboard.render.com) → Postgres `aeios-db`.
+2. Upgrade to **Basic** (or higher). Connection string usually stays valid; confirm `DATABASE_URL` on `aeios-api` still points at this instance.
+3. Optional: change `plan: free` → `plan: basic` in `render.yaml` so future Blueprint applies match the paid DB (do this only after the dashboard upgrade).
+4. Smoke: `GET /health` and a signed-in dashboard list of projects/tasks.
+
+Do **not** put production secrets in git when upgrading — change plans and env only in the Render dashboard.
+
+### Cold starts (free Web Service)
+
+Free web services **spin down** after idle time. Expect:
+
+- First request after sleep: often **~30–60s** (sometimes longer under load).
+- Subsequent requests: normal latency until the next idle sleep.
+- Health checks from Render itself can wake the service; external monitors that hit rarely will still see cold starts.
+
+Mitigations (pick when staging pain is real):
+
+- Upgrade the web service off the free plan (always-on).
+- Or accept cold starts for dogfooding; retry once if the dashboard times out on the first call after a long idle.
+
+### Healthcheck URL
+
+| Check | URL | Expected |
+|-------|-----|----------|
+| Liveness (public) | `https://<aeios-api-host>/health` | `200` JSON, no auth |
+| Auth gate | `https://<aeios-api-host>/v1/status` | `401` without Bearer |
+
+Render Blueprint sets `healthCheckPath: /health` (see `render.yaml`). Use the same `/health` URL for any external uptime ping.
+
+```bash
+# Replace host with your service URL
+curl -sS -o /dev/null -w "%{http_code}\n" https://aeios-api.onrender.com/health
+# expect 200
+```
+
+### What to monitor
+
+| Signal | Where | Why |
+|--------|--------|-----|
+| Deploy success / failed builds | Render → `aeios-api` → Events / Logs | Image or entrypoint regressions (auth refuse, missing deps) |
+| `/health` uptime + latency | Render health check + optional external ping | Distinguishes cold start vs real outage |
+| Postgres status / expiry date | Render → `aeios-db` | Free-tier clock; upgrade before delete |
+| `DATABASE_URL` present | `aeios-api` → Environment | Drift after DB recreate |
+| Auth misconfig | Logs at boot; `/v1/*` → 401 | Missing `CLERK_ISSUER` or accidental `AEIOS_AUTH_DISABLED` |
+| Dashboard → API errors | Vercel logs + browser network | Wrong `AEIOS_API_URL` / CORS / cold-start timeouts |
+| Disk / SQLite | N/A on free web | Never rely on SQLite on Render free (ephemeral) |
+
+Optional: hit `/v1/metrics` when signed in for process-local token/cost counters (resets on restart — not a multi-instance store).
+
+### Operator checklist
+
+- [ ] Note Postgres creation / expiry date; calendar reminder ~7 days before
+- [ ] Plan Basic (or higher) upgrade if staging must outlive free expiry
+- [ ] Bookmark health URL: `https://<host>/health`
+- [ ] After any DB change: confirm `DATABASE_URL`, redeploy, smoke `/health` + dashboard
+- [ ] Expect ~30–60s cold start on free web after idle; upgrade web plan if always-on is required
+- [ ] Never commit Render/Clerk/LLM secrets; set optional keys only in the dashboard
 
 ## Web: Vercel (recommended)
 
