@@ -13,6 +13,9 @@ venv/
 !.env.example
 !.env.staging.example
 !**/.env.example
+.vercel
+**/.vercel
+apps/web/.env.local
 
 # Testing / coverage
 .pytest_cache/
