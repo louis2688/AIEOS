@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { StatusPill } from "@/components/StatusPill";
+import { TaskArtifacts } from "@/components/TaskArtifacts";
 import { TaskStepList } from "@/components/TaskStepList";
-import { getTask } from "@/lib/aeios";
+import { getTask, getTaskArtifacts } from "@/lib/aeios";
 
 export default async function TaskDetailPage({
   params,
@@ -11,8 +12,15 @@ export default async function TaskDetailPage({
 }) {
   const { id } = await params;
   let task;
+  let artifacts: Awaited<ReturnType<typeof getTaskArtifacts>>["artifacts"] = [];
   try {
     task = await getTask(id);
+    try {
+      const art = await getTaskArtifacts(id);
+      artifacts = art.artifacts;
+    } catch {
+      artifacts = [];
+    }
   } catch {
     notFound();
   }
@@ -65,6 +73,13 @@ export default async function TaskDetailPage({
             <TaskStepList steps={task.steps} />
           </div>
         ) : null}
+        <div>
+          <p className="label">Artifacts</p>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            Files written during this task. On Render free, disk is ephemeral after redeploy/sleep.
+          </p>
+          <TaskArtifacts artifacts={artifacts} />
+        </div>
       </section>
     </div>
   );

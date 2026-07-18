@@ -129,6 +129,19 @@ If Blueprint sync cannot add the database (or you lack CLI/API access):
 
 CLI note: `render` CLI / Blueprint apply typically needs a logged-in account or API key (`render login`). There is no unauthenticated way to provision the DB from this repo alone.
 
+## Live progress & artifacts
+
+- Tasks / pipeline runs support `?wait=false` — returns immediately; poll `GET /v1/tasks/{id}` or `GET /v1/pipeline-runs/{id}` until `completed` / `failed`.
+- Dashboard Assistant and Run pipeline UIs poll for live status.
+- `GET /v1/tasks/{id}/artifacts` lists files written during the task (content if still on disk). **Filesystem writes under `/app` on Render free web are ephemeral** (no disk); Postgres holds task/pipeline metadata only.
+
+## Model library in production
+
+1. In Render → `aeios-api` → Environment, set `AEIOS_SECRETS_KEY` (random secret) so model API keys can be stored encrypted.
+2. Optionally set `OPENAI_API_KEY` as a planner fallback when no library default exists.
+3. In the Vercel dashboard → **Models**, register a provider model, paste the key, **Set default**.
+4. Confirm `GET /v1/status` shows `llm_planner: true` and `default_model` (authenticated).
+
 ## Ops hardening (Render)
 
 Runbook for keeping staging alive on free-tier Render. Blueprint: [`render.yaml`](../render.yaml).

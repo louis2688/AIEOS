@@ -31,9 +31,9 @@ services:
         fromDatabase:
           name: aeios-db
           property: connectionString
-      # Optional LLM / secrets — set in Dashboard (never commit):
-      # - key: OPENAI_API_KEY
-      #   sync: false
-      # - key: AEIOS_SECRETS_KEY
-      #   sync: false
+      # Optional LLM / model library (set in Dashboard — never commit):
+      # - OPENAI_API_KEY — env fallback planner if no library default
+      # - AEIOS_SECRETS_KEY — required to store provider keys via /v1/models
+      # Register a model in the dashboard Models page and Set default so the
+      # planner uses the library (Kernel.status.default_model / llm_planner).
       # Do NOT set AEIOS_AUTH_DISABLED (entrypoint refuses to start).

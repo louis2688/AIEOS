@@ -8,7 +8,10 @@ import type {
   PipelineStep,
   Project,
   Task,
+  TaskArtifact,
 } from "./types";
+
+export type { TaskArtifact };
 
 const REQUEST_TIMEOUT_MS = 20_000;
 const RETRY_DELAY_MS = 2_000;
@@ -170,11 +173,45 @@ export function getTask(id: string) {
   return request<Task>(`/v1/tasks/${id}`);
 }
 
-export function createTask(goal: string, agent?: string) {
-  return request<Task>("/v1/tasks", {
+export function createTask(
+  goal: string,
+  agent?: string,
+  opts?: { wait?: boolean },
+) {
+  const wait = opts?.wait ?? true;
+  const q = wait ? "" : "?wait=false";
+  return request<Task>(`/v1/tasks${q}`, {
     method: "POST",
     body: JSON.stringify({ goal, agent: agent || null }),
   });
+}
+
+const TERMINAL = new Set(["completed", "failed", "cancelled"]);
+
+export async function pollTask(
+  id: string,
+  opts?: { intervalMs?: number; maxMs?: number; onUpdate?: (task: Task) => void },
+): Promise<Task> {
+  const intervalMs = opts?.intervalMs ?? 1000;
+  const maxMs = opts?.maxMs ?? 180_000;
+  const started = Date.now();
+  let task = await getTask(id);
+  opts?.onUpdate?.(task);
+  while (!TERMINAL.has(task.status) && Date.now() - started < maxMs) {
+    await sleep(intervalMs);
+    task = await getTask(id);
+    opts?.onUpdate?.(task);
+  }
+  return task;
+}
+
+export function getTaskArtifacts(id: string) {
+  return request<{
+    task_id: string;
+    workspace: string;
+    count: number;
+    artifacts: TaskArtifact[];
+  }>(`/v1/tasks/${id}/artifacts`);
 }
 
 export function listProjects(limit = 30) {
@@ -216,11 +253,38 @@ export function deletePipeline(id: string) {
   return request<{ ok: boolean }>(`/v1/pipelines/${id}`, { method: "DELETE" });
 }
 
-export function runPipeline(id: string, input_goal: string) {
-  return request<PipelineRun>(`/v1/pipelines/${id}/runs`, {
+export function runPipeline(
+  id: string,
+  input_goal: string,
+  opts?: { wait?: boolean },
+) {
+  const wait = opts?.wait ?? true;
+  const q = wait ? "" : "?wait=false";
+  return request<PipelineRun>(`/v1/pipelines/${id}/runs${q}`, {
     method: "POST",
     body: JSON.stringify({ input_goal }),
   });
+}
+
+export async function pollPipelineRun(
+  id: string,
+  opts?: {
+    intervalMs?: number;
+    maxMs?: number;
+    onUpdate?: (run: PipelineRun) => void;
+  },
+): Promise<PipelineRun> {
+  const intervalMs = opts?.intervalMs ?? 1000;
+  const maxMs = opts?.maxMs ?? 300_000;
+  const started = Date.now();
+  let run = await getPipelineRun(id);
+  opts?.onUpdate?.(run);
+  while (!TERMINAL.has(run.status) && Date.now() - started < maxMs) {
+    await sleep(intervalMs);
+    run = await getPipelineRun(id);
+    opts?.onUpdate?.(run);
+  }
+  return run;
 }
 
 export function listPipelineRuns(pipelineId: string, limit = 30) {

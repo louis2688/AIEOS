@@ -20,12 +20,13 @@ aeios serve --host 127.0.0.1 --port 8080
 | GET | `/v1/status` | Kernel status |
 | GET | `/v1/agents` | Registered agents |
 | GET | `/v1/tools` | Registered tools |
-| POST | `/v1/tasks` | Execute a goal `{ "goal": "...", "agent": optional }` |
+| POST | `/v1/tasks` | Execute a goal `{ "goal": "...", "agent": optional }` (`?wait=false` for async) |
 | GET | `/v1/tasks` | List recent tasks |
 | GET | `/v1/tasks/{id}` | Get one task |
+| GET | `/v1/tasks/{id}/artifacts` | Files written during the task |
 | GET/POST | `/v1/pipelines` | List / create pipelines |
 | GET/DELETE | `/v1/pipelines/{id}` | Get / delete pipeline |
-| POST | `/v1/pipelines/{id}/runs` | Run pipeline `{ "input_goal": "..." }` |
+| POST | `/v1/pipelines/{id}/runs` | Run pipeline `{ "input_goal": "..." }` (`?wait=false` for async) |
 | GET | `/v1/pipelines/{id}/runs` | List runs for a pipeline |
 | GET | `/v1/pipeline-runs/{id}` | Get one run |
 | GET | `/v1/knowledge/search?q=` | Search tasks / pipelines / runs / projects / memory |

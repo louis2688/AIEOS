@@ -11,6 +11,7 @@ from aeios.api.auth import ClerkAuthMiddleware, ClerkJWTVerifier, resolve_owner_
 from aeios.config import Settings, get_settings
 from aeios.core.kernel import Kernel
 from aeios.core.pipeline_runner import PipelineRunner
+from aeios.knowledge.artifacts import collect_task_artifacts
 from aeios.knowledge.search import KnowledgeSearch
 from aeios.models.client import ModelClient
 from aeios.observability.metrics import get_metrics
@@ -222,8 +223,9 @@ def create_app(
         return {"tools": kernel.syscalls.list_tools()}
 
     @app.post("/v1/tasks", response_model=TaskOut)
-    def create_task(body: TaskCreate) -> TaskOut:
-        task = kernel.syscalls.execute_task(body.goal, agent=body.agent)
+    def create_task(body: TaskCreate, wait: bool = True) -> TaskOut:
+        """Create a task. wait=true (default) blocks until done; wait=false returns immediately."""
+        task = kernel.syscalls.execute_task(body.goal, agent=body.agent, wait=wait)
         return TaskOut(**task.model_dump(mode="json"))
 
     @app.get("/v1/tasks", response_model=list[TaskOut])
@@ -237,6 +239,20 @@ def create_app(
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         return TaskOut(**task.model_dump(mode="json"))
+
+    @app.get("/v1/tasks/{task_id}/artifacts")
+    def get_task_artifacts(task_id: str) -> dict[str, Any]:
+        """Files written during a task (paths from steps; content if still on disk)."""
+        task = kernel.syscalls.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        artifacts = collect_task_artifacts(task, kernel.workspace)
+        return {
+            "task_id": task_id,
+            "workspace": str(kernel.workspace),
+            "count": len(artifacts),
+            "artifacts": artifacts,
+        }
 
     @app.get("/v1/projects", response_model=list[ProjectOut])
     def list_projects(request: Request, limit: int = 50) -> list[ProjectOut]:
@@ -308,13 +324,21 @@ def create_app(
 
     @app.post("/v1/pipelines/{pipeline_id}/runs", response_model=PipelineRunOut)
     def run_pipeline(
-        request: Request, pipeline_id: str, body: PipelineRunCreate
+        request: Request,
+        pipeline_id: str,
+        body: PipelineRunCreate,
+        wait: bool = True,
     ) -> PipelineRunOut:
+        """Start a pipeline run. wait=true blocks until done; wait=false returns running run."""
         owner = resolve_owner_id(request)
         pipeline = pipelines.get(pipeline_id, owner_id=owner)
         if not pipeline:
             raise HTTPException(status_code=404, detail="Pipeline not found")
-        run = runner.run(pipeline, body.input_goal)
+        run = (
+            runner.run(pipeline, body.input_goal)
+            if wait
+            else runner.start(pipeline, body.input_goal)
+        )
         return _run_out(run)
 
     @app.get("/v1/pipelines/{pipeline_id}/runs", response_model=list[PipelineRunOut])

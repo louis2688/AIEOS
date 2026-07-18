@@ -1,14 +1,33 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { runGoalAction } from "@/app/actions";
+import { getTaskAction, startGoalAction } from "@/app/actions";
 import type { Task } from "@/lib/types";
 
 type Message = {
   role: "user" | "assistant";
   text: string;
   taskId?: string;
+  status?: string;
 };
+
+const TERMINAL = new Set(["completed", "failed", "cancelled"]);
+
+function progressText(task: Task): string {
+  const stepCount = task.steps?.length ?? 0;
+  const last = stepCount ? task.steps[stepCount - 1] : null;
+  const lastHint =
+    last && typeof last === "object"
+      ? String(last.step || last.tool || last.status || "")
+      : "";
+  const bits = [`status: ${task.status}`];
+  if (stepCount) bits.push(`${stepCount} step${stepCount === 1 ? "" : "s"}`);
+  if (lastHint) bits.push(lastHint);
+  if (task.plan?.length && task.status === "planning") {
+    bits.push(task.plan.slice(0, 2).join(" → "));
+  }
+  return bits.join(" · ");
+}
 
 export function AssistantClient({ agents }: { agents: string[] }) {
   const [messages, setMessages] = useState<Message[]>([
@@ -34,7 +53,10 @@ export function AssistantClient({ agents }: { agents: string[] }) {
           >
             {m.text}
             {m.taskId ? (
-              <p className="mt-2 font-mono text-[10px] text-[var(--accent)]">task {m.taskId}</p>
+              <p className="mt-2 font-mono text-[10px] text-[var(--accent)]">
+                task {m.taskId}
+                {m.status ? ` · ${m.status}` : ""}
+              </p>
             ) : null}
           </div>
         ))}
@@ -45,24 +67,81 @@ export function AssistantClient({ agents }: { agents: string[] }) {
           const goal = String(formData.get("goal") || "").trim();
           if (!goal) return;
           setMessages((prev) => [...prev, { role: "user", text: goal }]);
+          const progressIdx = { current: -1 };
           startTransition(async () => {
-            const result = await runGoalAction(formData);
-            if (!result.ok) {
+            const started = await startGoalAction(formData);
+            if (!started.ok) {
               setMessages((prev) => [
                 ...prev,
-                { role: "assistant", text: `Error: ${result.error}` },
+                { role: "assistant", text: `Error: ${started.error}` },
               ]);
               return;
             }
-            const task = result.task as Task;
-            setMessages((prev) => [
-              ...prev,
-              {
-                role: "assistant",
-                text: task.result || task.error || `Task ${task.status}`,
-                taskId: task.id,
-              },
-            ]);
+            let task = started.task as Task;
+            setMessages((prev) => {
+              progressIdx.current = prev.length;
+              return [
+                ...prev,
+                {
+                  role: "assistant",
+                  text: `Running… ${progressText(task)}`,
+                  taskId: task.id,
+                  status: task.status,
+                },
+              ];
+            });
+
+            const deadline = Date.now() + 180_000;
+            while (!TERMINAL.has(task.status) && Date.now() < deadline) {
+              await new Promise((r) => setTimeout(r, 1000));
+              const next = await getTaskAction(task.id);
+              if (!next.ok) {
+                setMessages((prev) => {
+                  const copy = [...prev];
+                  const i = progressIdx.current;
+                  if (i >= 0 && copy[i]) {
+                    copy[i] = {
+                      ...copy[i],
+                      text: `Error while polling: ${next.error}`,
+                    };
+                  }
+                  return copy;
+                });
+                return;
+              }
+              task = next.task;
+              setMessages((prev) => {
+                const copy = [...prev];
+                const i = progressIdx.current;
+                if (i >= 0 && copy[i]) {
+                  copy[i] = {
+                    role: "assistant",
+                    text: TERMINAL.has(task.status)
+                      ? task.result || task.error || `Task ${task.status}`
+                      : `Running… ${progressText(task)}`,
+                    taskId: task.id,
+                    status: task.status,
+                  };
+                }
+                return copy;
+              });
+            }
+
+            if (!TERMINAL.has(task.status)) {
+              setMessages((prev) => {
+                const copy = [...prev];
+                const i = progressIdx.current;
+                if (i >= 0 && copy[i]) {
+                  copy[i] = {
+                    ...copy[i],
+                    text: `Still ${task.status} after waiting — open task ${task.id} for details.`,
+                    taskId: task.id,
+                    status: task.status,
+                  };
+                }
+                return copy;
+              });
+            }
           });
         }}
       >
