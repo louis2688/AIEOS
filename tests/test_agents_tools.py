@@ -12,7 +12,13 @@ from aeios.planning.planner import Planner
 from aeios.tools.http import HttpTool
 
 
-def _write_config(tmp_path: Path, *, http: bool = True, shell: bool = True) -> None:
+def _write_config(
+    tmp_path: Path,
+    *,
+    http: bool = True,
+    shell: bool = True,
+    allow_write: bool = False,
+) -> None:
     (tmp_path / "configs").mkdir(exist_ok=True)
     http_block = (
         """
@@ -49,7 +55,7 @@ memory:
 tools:
   filesystem:
     enabled: true
-    allow_write: false
+    allow_write: {"true" if allow_write else "false"}
 {shell_block}
 {http_block}
 agents:
@@ -176,3 +182,66 @@ def test_hello_path_still_works(tmp_path: Path, monkeypatch) -> None:
     assert task.status == TaskStatus.COMPLETED
     assert task.result is not None
     assert "AEIOS" in task.result
+
+
+def test_software_engineer_writes_file_in_jail(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _write_config(tmp_path, http=False, shell=False, allow_write=True)
+
+    kernel = Kernel(workspace=tmp_path)
+    task = kernel.run_goal("implement create hello_stub.py with a main function")
+    assert task.status == TaskStatus.COMPLETED
+    steps = {s["step"]: s for s in task.steps}
+    assert steps["write_file"]["status"] == "ok"
+    assert steps["write_file"].get("observation")
+    assert (tmp_path / "hello_stub.py").is_file()
+    body = (tmp_path / "hello_stub.py").read_text(encoding="utf-8")
+    assert "def main" in body
+    assert "Observations:" in (task.result or "")
+    assert "write file" in (task.result or "").lower() or "hello_stub.py" in (task.result or "")
+
+
+def test_software_engineer_updates_existing_file(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _write_config(tmp_path, http=False, shell=False, allow_write=True)
+    (tmp_path / "notes.md").write_text("# notes\n", encoding="utf-8")
+
+    kernel = Kernel(workspace=tmp_path)
+    task = kernel.run_goal("edit notes.md to clarify structure")
+    assert task.status == TaskStatus.COMPLETED
+    steps = {s["step"]: s for s in task.steps}
+    assert steps["update_file"]["status"] == "ok"
+    assert "AEIOS update" in (tmp_path / "notes.md").read_text(encoding="utf-8")
+
+
+def test_architect_writes_architecture_md(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _write_config(tmp_path, http=False, shell=False, allow_write=True)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "docs").mkdir()
+
+    kernel = Kernel(workspace=tmp_path)
+    task = kernel.run_goal("outline architecture for billing modules", agent="architect")
+    assert task.status == TaskStatus.COMPLETED
+    steps = {s["step"]: s for s in task.steps}
+    assert steps["architecture_outline"]["status"] == "ok"
+    assert steps["architecture_outline"].get("observation")
+    assert steps["write_architecture_doc"]["status"] == "ok"
+    arch = tmp_path / "docs" / "ARCHITECTURE.md"
+    assert arch.is_file()
+    text = arch.read_text(encoding="utf-8")
+    assert "# Architecture outline" in text
+    assert "billing" in text.lower()
+    assert "Observations:" in (task.result or "")
+
+
+def test_planner_implement_deterministic_path() -> None:
+    planner = Planner()
+    plan = planner.deterministic_plan("implement create app.py")
+    assert any("write" in s.lower() or "update" in s.lower() for s in plan)
+
+    arch = planner.deterministic_plan(
+        "outline architecture for auth",
+        agent_role="architect",
+    )
+    assert any("ARCHITECTURE" in s or "architecture" in s.lower() for s in arch)

@@ -16,8 +16,8 @@ memory:
 tools:
   filesystem:
     enabled: true
-    # Jail tool reads/writes to workspace root by default
-    allow_write: false
+    # Writes stay inside the workspace jail (path-resolved); disable for read-only hosts
+    allow_write: true
   shell:
     enabled: true
     timeout_sec: 15

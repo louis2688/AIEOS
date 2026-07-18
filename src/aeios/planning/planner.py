@@ -48,7 +48,39 @@ class Planner:
             ]
             if "http://" in lowered or "https://" in lowered:
                 steps.insert(2, "Fetch external reference over HTTP")
+            if any(
+                k in lowered
+                for k in (
+                    "write",
+                    "document",
+                    "save",
+                    "persist",
+                    "architecture.md",
+                    "outline",
+                    "design",
+                )
+            ):
+                steps.append("Write short ARCHITECTURE.md in workspace jail")
             return steps
+
+        if any(
+            k in lowered
+            for k in (
+                "implement",
+                "create ",
+                "write ",
+                "edit ",
+                "update ",
+                "scaffold",
+                "generate ",
+            )
+        ):
+            return [
+                "Acknowledge goal",
+                "Inspect workspace listing",
+                "Write or update target file in workspace jail",
+                "Summarize observations",
+            ]
 
         if any(k in lowered for k in ("shell", "command", "pwd", "ls ")):
             return [
