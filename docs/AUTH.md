@@ -57,6 +57,21 @@ When auth is enabled, requests without a valid Bearer token receive `401`. `/hea
 
 Pytest sets `AEIOS_AUTH_DISABLED=1` in `tests/conftest.py` so existing API tests keep working. Dedicated auth tests override that and exercise reject/accept paths.
 
+## Per-user data isolation (Phase 4)
+
+Projects and pipelines are scoped to an **owner id**:
+
+| Mode | `owner_id` value | Source |
+|------|------------------|--------|
+| Auth enabled | Clerk JWT `sub` | Set on `request.state.user_id` by `ClerkAuthMiddleware` |
+| Auth disabled | `"local"` | Fixed escape-hatch owner for CLI / pytest |
+
+- **Create** stamps `owner_id` from the request.
+- **List / get / delete** filter by that owner (cross-user access returns `404`, not the other user's row).
+- Pipeline runs inherit isolation via a join on the parent pipeline's `owner_id`.
+- Schema: `owner_id TEXT NOT NULL DEFAULT 'local'` on `projects` and `pipelines`. Existing SQLite/Postgres DBs get an additive `ALTER TABLE … ADD COLUMN` on store init (`SqlDb.ensure_column`).
+- Tasks / model library secrets are **not** owner-scoped in this phase (kernel-local still).
+
 ## Run
 
 ```bash

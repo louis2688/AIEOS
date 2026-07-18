@@ -127,6 +127,23 @@ class SqlDb:
             return "DEFAULT (NOW() AT TIME ZONE 'utc')"
         return "DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
 
+    def table_columns(self, table: str) -> set[str]:
+        """Return lowercase column names for an existing table."""
+        raise NotImplementedError
+
+    def ensure_column(self, table: str, column: str, col_def: str = "TEXT") -> None:
+        """Add ``column`` to ``table`` if missing (sqlite + postgres).
+
+        ``col_def`` is the SQL type/default fragment after the column name,
+        e.g. ``TEXT`` or ``TEXT NOT NULL DEFAULT 'local'``.
+        Safe to call repeatedly; no-op when the column already exists.
+        """
+        cols = self.table_columns(table)
+        if column.lower() in cols:
+            return
+        # Identifiers are controlled by callers (store schema), not user input.
+        self.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
+
 
 class SqliteDb(SqlDb):
     def __init__(self, db_path: Path) -> None:
@@ -162,6 +179,10 @@ class SqliteDb(SqlDb):
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+    def table_columns(self, table: str) -> set[str]:
+        rows = self.execute(f"PRAGMA table_info({table})").fetchall()
+        return {str(r["name"]).lower() for r in rows}
 
 
 class PostgresDb(SqlDb):
@@ -214,6 +235,17 @@ class PostgresDb(SqlDb):
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+    def table_columns(self, table: str) -> set[str]:
+        rows = self.execute(
+            """
+            SELECT column_name AS name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = ?
+            """,
+            (table,),
+        ).fetchall()
+        return {str(r["name"]).lower() for r in rows}
 
 
 def open_db(

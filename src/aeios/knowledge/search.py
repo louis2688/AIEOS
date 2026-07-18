@@ -52,6 +52,7 @@ class KnowledgeSearch:
         *,
         limit: int = 30,
         kinds: set[str] | None = None,
+        owner_id: str | None = None,
     ) -> list[KnowledgeHit]:
         q = query.strip()
         if not q:
@@ -69,11 +70,11 @@ class KnowledgeSearch:
         if "task" in allowed:
             hits.extend(self._search_tasks(q))
         if "pipeline" in allowed:
-            hits.extend(self._search_pipelines(q))
+            hits.extend(self._search_pipelines(q, owner_id=owner_id))
         if "pipeline_run" in allowed:
-            hits.extend(self._search_runs(q))
+            hits.extend(self._search_runs(q, owner_id=owner_id))
         if "project" in allowed:
-            hits.extend(self._search_projects(q))
+            hits.extend(self._search_projects(q, owner_id=owner_id))
         if "memory" in allowed:
             hits.extend(self._search_memory(q))
 
@@ -116,9 +117,11 @@ class KnowledgeSearch:
             )
         return hits
 
-    def _search_pipelines(self, query: str) -> list[KnowledgeHit]:
+    def _search_pipelines(
+        self, query: str, *, owner_id: str | None = None
+    ) -> list[KnowledgeHit]:
         hits: list[KnowledgeHit] = []
-        for pipeline in self.pipelines.list(limit=200):
+        for pipeline in self.pipelines.list(limit=200, owner_id=owner_id):
             step_text = " ".join(f"{s.agent} {s.goal}" for s in pipeline.steps)
             blob = " ".join(
                 [
@@ -145,9 +148,11 @@ class KnowledgeSearch:
             )
         return hits
 
-    def _search_runs(self, query: str) -> list[KnowledgeHit]:
+    def _search_runs(
+        self, query: str, *, owner_id: str | None = None
+    ) -> list[KnowledgeHit]:
         hits: list[KnowledgeHit] = []
-        for run in self.pipelines.list_runs(limit=300):
+        for run in self.pipelines.list_runs(limit=300, owner_id=owner_id):
             step_blob = json.dumps(run.step_results, default=str)
             blob = " ".join(
                 [
@@ -182,9 +187,11 @@ class KnowledgeSearch:
             )
         return hits
 
-    def _search_projects(self, query: str) -> list[KnowledgeHit]:
+    def _search_projects(
+        self, query: str, *, owner_id: str | None = None
+    ) -> list[KnowledgeHit]:
         hits: list[KnowledgeHit] = []
-        for project in self.projects.list(limit=200):
+        for project in self.projects.list(limit=200, owner_id=owner_id):
             blob = " ".join(
                 [project.id, project.name, project.description or ""]
             )
