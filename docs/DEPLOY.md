@@ -73,6 +73,34 @@ curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/v1/status
 - Optional LLM keys (`OPENAI_API_KEY`, …) and `AEIOS_SECRETS_KEY` via env — never bake into the image.
 - `/docs` and OpenAPI are currently public paths; restrict at the reverse proxy if you do not want them on the internet.
 
+### Hosting on Render (free tier)
+
+Repo root includes [`render.yaml`](../render.yaml) for a Docker Web Service (`aeios-api`) with health check `/health`.
+
+1. Sign in at [dashboard.render.com](https://dashboard.render.com) (or `render login` with the [Render CLI](https://render.com/docs/cli)).
+2. **New → Blueprint** → connect `louis2688/AIEOS` (or your fork) → apply the blueprint.
+3. Confirm env: `CLERK_ISSUER`, `AEIOS_ENV=staging`. Leave `AEIOS_AUTH_DISABLED` unset.
+4. After deploy, note the public URL (e.g. `https://aeios-api.onrender.com`).
+5. Point Vercel at that URL (from `apps/web`):
+
+   ```bash
+   printf '%s' 'https://aeios-api.onrender.com' | npx vercel env add AEIOS_API_URL production --force --yes
+   printf '%s' 'https://aeios-api.onrender.com' | npx vercel env add NEXT_PUBLIC_AEIOS_API_URL production --force --yes
+   npx vercel --prod --yes
+   ```
+
+6. Smoke checks:
+
+   ```bash
+   curl -sS https://aeios-api.onrender.com/health
+   curl -sS -o /dev/null -w "%{http_code}\n" https://aeios-api.onrender.com/v1/status
+   # expect 401
+   ```
+
+**Free-tier SQLite:** persistent disks are not available on the free plan. The default `DATABASE_URL=sqlite:///./data/aeios.db` is **ephemeral** — data is lost on redeploy and when the free instance spins down. For durable storage, upgrade the service and attach a disk at `/app/data`, or use Render Postgres / another hosted DB.
+
+**Cold starts:** free Web Services sleep after inactivity; the first request after sleep can take ~30–60s.
+
 ## Web: Vercel (recommended)
 
 1. Import the repo; set root directory to `apps/web`.
