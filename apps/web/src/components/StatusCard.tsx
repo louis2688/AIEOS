@@ -1,14 +1,67 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useTransition } from "react";
 import type { KernelStatus } from "@/lib/types";
 
-export function StatusCard({ status }: { status: KernelStatus | null; error?: string }) {
+function formatError(message: string) {
+  const parts = message.split(/\b(aeios serve)\b/);
+  return parts.map((part, i) =>
+    part === "aeios serve" ? (
+      <code key={i} className="font-mono text-[var(--accent)]">
+        {part}
+      </code>
+    ) : (
+      <span key={i}>{part}</span>
+    ),
+  );
+}
+
+export function StatusCard({
+  status,
+  error,
+}: {
+  status: KernelStatus | null;
+  error?: string;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+
   if (!status) {
+    const message =
+      error ||
+      "Can't reach the AEIOS API. If the API is on Render free tier it may be cold-starting (often 30–60s) — wait and retry. Or start the kernel locally with aeios serve.";
+    const isAuth = /authentication failed|401/i.test(message);
+
     return (
       <section className="panel">
-        <h2 className="panel-title">Kernel status</h2>
-        <p className="mt-3 text-sm text-[var(--danger)]">
-          API unreachable. Start the kernel with{" "}
-          <code className="font-mono text-[var(--accent)]">aeios serve</code>.
-        </p>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="panel-title">Kernel status</h2>
+          <span className="inline-flex items-center gap-2 font-mono text-[10px] tracking-widest text-[var(--danger)] uppercase">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--danger)]" />
+            offline
+          </span>
+        </div>
+        <p className="mt-3 text-sm text-[var(--danger)]">{formatError(message)}</p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={pending}
+            className="btn-primary"
+            onClick={() => startTransition(() => router.refresh())}
+          >
+            {pending ? "Retrying…" : "Retry"}
+          </button>
+          {isAuth ? (
+            <span className="font-mono text-[10px] tracking-wide text-[var(--muted)] uppercase">
+              Use Sign in in the header, then retry
+            </span>
+          ) : (
+            <span className="font-mono text-[10px] tracking-wide text-[var(--muted)] uppercase">
+              Cold start can take up to a minute
+            </span>
+          )}
+        </div>
       </section>
     );
   }

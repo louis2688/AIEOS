@@ -10,6 +10,9 @@ import type {
   Task,
 } from "./types";
 
+const REQUEST_TIMEOUT_MS = 20_000;
+const RETRY_DELAY_MS = 2_000;
+
 function apiBase(): string {
   return (
     process.env.AEIOS_API_URL ||
@@ -18,7 +21,92 @@ function apiBase(): string {
   ).replace(/\/$/, "");
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function extractDetail(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  try {
+    const parsed = JSON.parse(trimmed) as { detail?: unknown; message?: unknown };
+    if (typeof parsed.detail === "string" && parsed.detail) return parsed.detail;
+    if (typeof parsed.message === "string" && parsed.message) return parsed.message;
+  } catch {
+    // plain text body
+  }
+  return trimmed.length > 280 ? `${trimmed.slice(0, 277)}…` : trimmed;
+}
+
+function isTimeoutError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === "TimeoutError" || err.name === "AbortError") return true;
+  return /timeout|timed out|aborted/i.test(err.message);
+}
+
+function isNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (isTimeoutError(err)) return false;
+  // Undici / fetch failures when the host is unreachable or still booting.
+  return (
+    err.name === "TypeError" ||
+    /fetch failed|network|ECONNREFUSED|ENOTFOUND|ECONNRESET|socket/i.test(err.message)
+  );
+}
+
+function networkMessage(): string {
+  return (
+    "Can't reach the AEIOS API. If the API is on Render free tier it may be cold-starting " +
+    "(often 30–60s) — wait and retry. Or start the kernel locally with aeios serve."
+  );
+}
+
+function timeoutMessage(): string {
+  return (
+    "The API timed out. The server may be cold-starting — wait a moment and hit Retry, " +
+    "or start the kernel locally with aeios serve."
+  );
+}
+
+function authMessage(detail?: string): string {
+  const hint =
+    detail ||
+    "Missing or invalid session token. Sign in again (top right), then refresh.";
+  return `Authentication failed (401). ${hint}`;
+}
+
+function httpMessage(status: number, body: string): string {
+  const detail = extractDetail(body);
+  if (status === 401) return authMessage(detail || undefined);
+  if (status === 403) {
+    return detail
+      ? `Access denied (403). ${detail}`
+      : "Access denied (403). Your account may lack permission for this API.";
+  }
+  if (status === 502 || status === 503 || status === 504) {
+    return (
+      `API unavailable (${status})${detail ? `: ${detail}` : ""}. ` +
+      "The service may still be starting — wait and retry."
+    );
+  }
+  return detail || `AEIOS API ${status}`;
+}
+
+function toUserError(err: unknown): Error {
+  if (err instanceof Error && err.message.startsWith("Authentication failed")) return err;
+  if (err instanceof Error && err.message.startsWith("Can't reach")) return err;
+  if (err instanceof Error && err.message.startsWith("The API timed out")) return err;
+  if (err instanceof Error && err.message.startsWith("API unavailable")) return err;
+  if (err instanceof Error && err.message.startsWith("Access denied")) return err;
+  if (err instanceof Error && err.message.startsWith("AEIOS API")) return err;
+
+  if (isTimeoutError(err)) return new Error(timeoutMessage());
+  if (isNetworkError(err)) return new Error(networkMessage());
+  if (err instanceof Error) return err;
+  return new Error(networkMessage());
+}
+
+async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getSessionToken();
   const headers: Record<string, string> = {
     "content-type": "application/json",
@@ -33,16 +121,41 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${apiBase()}${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase()}${path}`, {
+      ...init,
+      headers,
+      cache: "no-store",
+      signal: init?.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw toUserError(err);
+  }
+
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `AEIOS API ${res.status}`);
+    throw new Error(httpMessage(res.status, text));
   }
   return res.json() as Promise<T>;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  try {
+    return await requestOnce<T>(path, init);
+  } catch (err) {
+    // One automatic retry for cold-start / transient network failures (GET only).
+    const method = (init?.method ?? "GET").toUpperCase();
+    const retryable =
+      method === "GET" &&
+      err instanceof Error &&
+      (err.message.startsWith("Can't reach") ||
+        err.message.startsWith("The API timed out") ||
+        err.message.startsWith("API unavailable"));
+    if (!retryable) throw err;
+    await sleep(RETRY_DELAY_MS);
+    return requestOnce<T>(path, init);
+  }
 }
 
 export function getStatus() {
