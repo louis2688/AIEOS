@@ -25,7 +25,7 @@ COPY src ./src
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN pip install --upgrade pip \
-    && pip install ".[api]" \
+    && pip install ".[api,postgres]" \
     && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Entrypoint starts as root to fix volume ownership, then drops to uid 10001.
