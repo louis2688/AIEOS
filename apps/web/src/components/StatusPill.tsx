@@ -5,9 +5,14 @@ export function StatusPill({ status }: { status: string }) {
       ? "text-[var(--accent)] border-[var(--accent)]/40"
       : normalized === "failed" || normalized === "error"
         ? "text-[var(--danger)] border-[var(--danger)]/40"
-        : normalized === "retry" || normalized === "started" || normalized === "running"
-          ? "text-[var(--ink)] border-[var(--accent)]/25"
-          : "text-[var(--muted)] border-[var(--line)]";
+        : normalized === "cancelled" || normalized === "canceled"
+          ? "text-[var(--muted)] border-[var(--line)]"
+          : normalized === "retry" ||
+              normalized === "started" ||
+              normalized === "running" ||
+              normalized === "planning"
+            ? "text-[var(--ink)] border-[var(--accent)]/25"
+            : "text-[var(--muted)] border-[var(--line)]";
 
   return (
     <span

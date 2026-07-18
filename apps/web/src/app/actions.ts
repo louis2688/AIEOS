@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  cancelPipelineRun,
+  cancelTask,
   createModel,
   createPipeline,
   createProject,
@@ -10,7 +12,6 @@ import {
   deletePipeline,
   deleteProject,
   getPipelineRun,
-  cancelTask,
   getTask,
   getTaskArtifacts,
   pollPipelineRun,
@@ -303,6 +304,26 @@ export async function getPipelineRunAction(runId: string) {
     return {
       ok: false as const,
       error: err instanceof Error ? err.message : "Failed to load run",
+    };
+  }
+}
+
+export async function cancelPipelineRunAction(runId: string) {
+  try {
+    await requireUser();
+  } catch {
+    return { ok: false as const, error: "Sign in required" };
+  }
+  try {
+    const run = await cancelPipelineRun(runId);
+    revalidatePath("/pipelines");
+    revalidatePath(`/pipelines/${run.pipeline_id}`);
+    revalidatePath("/tasks");
+    return { ok: true as const, run };
+  } catch (err) {
+    return {
+      ok: false as const,
+      error: err instanceof Error ? err.message : "Failed to cancel pipeline run",
     };
   }
 }

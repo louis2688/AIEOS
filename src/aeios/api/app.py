@@ -23,6 +23,7 @@ from aeios.persistence.pipelines import PipelineStep, PipelineStore
 from aeios.persistence.projects import ProjectStore
 
 _TASK_TERMINAL = frozenset({"completed", "failed", "cancelled"})
+_PIPELINE_RUN_TERMINAL = frozenset({"completed", "failed", "cancelled"})
 
 
 class TaskCreate(BaseModel):
@@ -187,6 +188,7 @@ def create_app(
     app.state.kernel = kernel
     app.state.projects = projects
     app.state.pipelines = pipelines
+    app.state.pipeline_runner = runner
     app.state.knowledge = knowledge
     app.state.models = models
 
@@ -426,6 +428,55 @@ def create_app(
         if not run:
             raise HTTPException(status_code=404, detail="Pipeline run not found")
         return _run_out(run)
+
+    @app.post("/v1/pipeline-runs/{run_id}/cancel", response_model=PipelineRunOut)
+    def cancel_pipeline_run(request: Request, run_id: str) -> PipelineRunOut:
+        owner = resolve_owner_id(request)
+        run = pipelines.get_run(run_id, owner_id=owner)
+        if not run:
+            raise HTTPException(status_code=404, detail="Pipeline run not found")
+        cancelled = runner.request_cancel(run_id)
+        if not cancelled:
+            raise HTTPException(status_code=404, detail="Pipeline run not found")
+        # Re-check owner after cancel (defensive; cancel is by id).
+        verified = pipelines.get_run(run_id, owner_id=owner)
+        if not verified:
+            raise HTTPException(status_code=404, detail="Pipeline run not found")
+        return _run_out(verified)
+
+    @app.get("/v1/pipeline-runs/{run_id}/events")
+    def pipeline_run_events(request: Request, run_id: str) -> StreamingResponse:
+        """SSE stream of pipeline run snapshots until terminal status."""
+        owner = resolve_owner_id(request)
+        run = pipelines.get_run(run_id, owner_id=owner)
+        if not run:
+            raise HTTPException(status_code=404, detail="Pipeline run not found")
+
+        def event_stream():
+            last: str | None = None
+            for _ in range(300):
+                current = pipelines.get_run(run_id, owner_id=owner)
+                if not current:
+                    yield f"event: error\ndata: {json.dumps({'detail': 'Pipeline run not found'})}\n\n"
+                    break
+                payload = _run_out(current).model_dump()
+                blob = json.dumps(payload)
+                if blob != last:
+                    yield f"data: {blob}\n\n"
+                    last = blob
+                if current.status in _PIPELINE_RUN_TERMINAL:
+                    break
+                time.sleep(1.0)
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.get("/v1/pipeline-runs", response_model=list[PipelineRunOut])
     def list_all_pipeline_runs(

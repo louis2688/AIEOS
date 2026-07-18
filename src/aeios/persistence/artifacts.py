@@ -112,17 +112,45 @@ class ArtifactStore:
                     "SELECT * FROM artifacts WHERE task_id = ? ORDER BY path",
                     (task_id,),
                 ).fetchall()
-        return [
-            {
-                "id": r["id"],
-                "task_id": r["task_id"],
-                "owner_id": r["owner_id"],
-                "path": r["path"],
-                "bytes": r["bytes"],
-                "content": r["content"],
-                "exists": True,
-                "source": "db",
-                "ephemeral_note": None,
-            }
-            for r in rows
-        ]
+        return [self._row_dict(r) for r in rows]
+
+    def list(
+        self, *, limit: int = 500, owner_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """List recent artifacts, optionally scoped to an owner."""
+        lim = max(1, min(int(limit), 2000))
+        with self._db.lock():
+            if owner_id is not None:
+                rows = self._db.execute(
+                    """
+                    SELECT * FROM artifacts
+                    WHERE owner_id = ?
+                    ORDER BY updated_at DESC
+                    LIMIT ?
+                    """,
+                    (owner_id, lim),
+                ).fetchall()
+            else:
+                rows = self._db.execute(
+                    """
+                    SELECT * FROM artifacts
+                    ORDER BY updated_at DESC
+                    LIMIT ?
+                    """,
+                    (lim,),
+                ).fetchall()
+        return [self._row_dict(r) for r in rows]
+
+    @staticmethod
+    def _row_dict(r: Any) -> dict[str, Any]:
+        return {
+            "id": r["id"],
+            "task_id": r["task_id"],
+            "owner_id": r["owner_id"],
+            "path": r["path"],
+            "bytes": r["bytes"],
+            "content": r["content"],
+            "exists": True,
+            "source": "db",
+            "ephemeral_note": None,
+        }

@@ -1,6 +1,6 @@
 # AEIOS Threat Model (local-first)
 
-Short security model for the Phase 3 hardening baseline, plus Phase 4 per-user row isolation for projects/pipelines. AEIOS remains primarily a local control plane; multi-tenant isolation applies when the FastAPI layer is shared behind Clerk.
+Short security model for the Phase 3 hardening baseline (sandbox + secrets hygiene shipped; RBAC deferred), plus Phase 4 per-user row isolation for projects/pipelines/tasks/models. AEIOS remains primarily a local control plane; multi-tenant isolation applies when the FastAPI layer is shared behind Clerk.
 
 ## Trust boundaries
 
@@ -68,7 +68,7 @@ Clerk JWT validation lives in FastAPI (`aeios.api.auth`). Do not duplicate auth 
 
 ## Multi-tenant row isolation (Phase 4)
 
-When the API is shared across Clerk users, **projects** and **pipelines** rows carry `owner_id` (= JWT `sub`). List/get/delete and pipeline-run access are filtered by that owner so users cannot read or mutate each other's data. With `AEIOS_AUTH_DISABLED` (or no Clerk config), every request uses the fixed owner `"local"` so local pytest/CLI stay single-tenant. Details: [`AUTH.md`](AUTH.md#per-user-data-isolation-phase-4).
+When the API is shared across Clerk users, **projects**, **pipelines**, **tasks**, and **models** rows carry `owner_id` (= JWT `sub`). List/get/delete/cancel and pipeline-run access are filtered by that owner so users cannot read or mutate each other's data. Memory and knowledge vectors are only partially isolated. With `AEIOS_AUTH_DISABLED` (or no Clerk config), every request uses the fixed owner `"local"` so local pytest/CLI stay single-tenant. Details: [`AUTH.md`](AUTH.md#per-user-data-isolation-phase-4).
 
 ## Observability (MVP)
 

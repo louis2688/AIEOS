@@ -26,11 +26,13 @@ class KnowledgeHit:
 
 
 class KnowledgeSearch:
-    """Unified search across tasks, pipelines, runs, projects, and memory.
+    """Unified search across tasks, pipelines, runs, projects, artifacts, memory.
 
     Lexical search is always used. When a Qdrant index is configured and
     reachable, memory (and optionally task) vectors are upserted lazily and
     merged into results. Qdrant failures never raise — lexical remains.
+
+    Shared process memory is only searched for local / auth-off owners.
     """
 
     def __init__(
@@ -64,6 +66,7 @@ class KnowledgeSearch:
             "pipeline_run",
             "project",
             "memory",
+            "artifact",
         }
         hits: list[KnowledgeHit] = []
 
@@ -75,12 +78,14 @@ class KnowledgeSearch:
             hits.extend(self._search_runs(q, owner_id=owner_id))
         if "project" in allowed:
             hits.extend(self._search_projects(q, owner_id=owner_id))
+        if "artifact" in allowed:
+            hits.extend(self._search_artifacts(q, owner_id=owner_id))
         if "memory" in allowed:
-            hits.extend(self._search_memory(q))
+            hits.extend(self._search_memory(q, owner_id=owner_id))
 
         # Optional vector enrichment (soft-fail inside index)
         if self.vector_index is not None:
-            hits.extend(self._vector_hits(q, allowed))
+            hits.extend(self._vector_hits(q, allowed, owner_id=owner_id))
 
         hits = _dedupe_hits(hits)
         hits.sort(key=lambda h: (-h.score, h.kind, h.id))
@@ -215,7 +220,51 @@ class KnowledgeSearch:
             )
         return hits
 
-    def _search_memory(self, query: str) -> list[KnowledgeHit]:
+    def _search_artifacts(
+        self, query: str, *, owner_id: str | None = None
+    ) -> list[KnowledgeHit]:
+        hits: list[KnowledgeHit] = []
+        artifacts = getattr(self.kernel, "artifacts", None)
+        if artifacts is None:
+            return hits
+        for art in artifacts.list(limit=500, owner_id=owner_id):
+            path = art.get("path") or ""
+            content = art.get("content") or ""
+            blob = " ".join(
+                [
+                    art.get("id") or "",
+                    art.get("task_id") or "",
+                    path,
+                    content,
+                ]
+            )
+            score, snippet = _match(query, blob, preferred=content[:240] or path)
+            if score <= 0:
+                continue
+            task_id = art.get("task_id") or ""
+            hits.append(
+                KnowledgeHit(
+                    kind="artifact",
+                    id=art["id"],
+                    title=path or art["id"],
+                    snippet=snippet,
+                    score=score,
+                    href=f"/tasks/{task_id}" if task_id else None,
+                    meta={
+                        "path": path,
+                        "task_id": task_id,
+                        "bytes": art.get("bytes", 0),
+                    },
+                )
+            )
+        return hits
+
+    def _search_memory(
+        self, query: str, *, owner_id: str | None = None
+    ) -> list[KnowledgeHit]:
+        # Shared memory has no owner column — exclude for signed-in tenants.
+        if owner_id is not None and owner_id != "local":
+            return []
         hits: list[KnowledgeHit] = []
         memory = self.kernel.memory
         for key in memory.keys():
@@ -238,19 +287,28 @@ class KnowledgeSearch:
             )
         return hits
 
-    def _vector_hits(self, query: str, allowed: set[str]) -> list[KnowledgeHit]:
+    def _vector_hits(
+        self,
+        query: str,
+        allowed: set[str],
+        *,
+        owner_id: str | None = None,
+    ) -> list[KnowledgeHit]:
         idx = self.vector_index
         if idx is None:
             return []
         # Lazy upsert of memory + recent tasks (best-effort)
         try:
-            self._sync_vectors(allowed)
+            self._sync_vectors(allowed, owner_id=owner_id)
             raw = idx.search(query, limit=20)
         except Exception:  # noqa: BLE001
             return []
         hits: list[KnowledgeHit] = []
         for v in raw:
             if v.kind not in allowed or not v.id:
+                continue
+            # Drop shared-memory vector hits for signed-in tenants.
+            if v.kind == "memory" and owner_id is not None and owner_id != "local":
                 continue
             hits.append(
                 KnowledgeHit(
@@ -265,11 +323,16 @@ class KnowledgeSearch:
             )
         return hits
 
-    def _sync_vectors(self, allowed: set[str]) -> None:
+    def _sync_vectors(
+        self, allowed: set[str], *, owner_id: str | None = None
+    ) -> None:
         idx = self.vector_index
         if idx is None or not idx.available:
             return
-        if "memory" in allowed:
+        allow_memory = "memory" in allowed and (
+            owner_id is None or owner_id == "local"
+        )
+        if allow_memory:
             memory = self.kernel.memory
             for key in memory.keys():
                 value = memory.get(key)
@@ -286,7 +349,7 @@ class KnowledgeSearch:
                     meta={"key": key},
                 )
         if "task" in allowed:
-            for task in self.kernel.store.list_tasks(limit=100):
+            for task in self.kernel.store.list_tasks(limit=100, owner_id=owner_id):
                 idx.upsert_document(
                     point_id=task.id,
                     kind="task",
@@ -302,6 +365,27 @@ class KnowledgeSearch:
                     href=f"/tasks/{task.id}",
                     meta={"status": task.status.value, "agent": task.agent},
                 )
+        if "artifact" in allowed:
+            artifacts = getattr(self.kernel, "artifacts", None)
+            if artifacts is not None:
+                for art in artifacts.list(limit=100, owner_id=owner_id):
+                    path = art.get("path") or ""
+                    content = art.get("content") or ""
+                    idx.upsert_document(
+                        point_id=art["id"],
+                        kind="artifact",
+                        title=path or art["id"],
+                        text=f"{path} {content}",
+                        href=(
+                            f"/tasks/{art['task_id']}"
+                            if art.get("task_id")
+                            else None
+                        ),
+                        meta={
+                            "path": path,
+                            "task_id": art.get("task_id"),
+                        },
+                    )
 
 
 def _dedupe_hits(hits: list[KnowledgeHit]) -> list[KnowledgeHit]:

@@ -136,8 +136,11 @@ class Planner:
             model = self.model_store.get_default(owner_id=owner_id)
             if model and model.enabled:
                 return model
-        # Legacy fallback: env OpenAI key without library entry
-        if self.settings.openai_api_key:
+        # Env OPENAI_API_KEY fallback only for local / auth-off. Signed-in
+        # owners without a library model get a deterministic plan — never
+        # silently share the process env key across tenants.
+        allow_env = owner_id is None or owner_id == "local"
+        if allow_env and self.settings.openai_api_key:
             from aeios.persistence.models import ModelRecord
 
             return ModelRecord(
