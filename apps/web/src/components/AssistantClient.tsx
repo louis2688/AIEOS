@@ -66,11 +66,12 @@ export function AssistantClient({ agents }: { agents: string[] }) {
           });
         }}
       >
-        <div className="flex flex-col gap-3 md:flex-row">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <select
             name="agent"
             defaultValue={agents[0] || "software_engineer"}
-            className="field md:w-56"
+            className="field shrink-0 md:w-56"
+            disabled={pending}
           >
             {agents.map((a) => (
               <option key={a} value={a}>
@@ -82,10 +83,11 @@ export function AssistantClient({ agents }: { agents: string[] }) {
             name="goal"
             required
             placeholder="Ask the kernel…"
-            className="field flex-1"
+            className="field min-w-0 flex-1"
             disabled={pending}
+            autoComplete="off"
           />
-          <button type="submit" className="btn-primary md:w-auto" disabled={pending}>
+          <button type="submit" className="btn-primary shrink-0 md:w-auto" disabled={pending}>
             {pending ? "Running…" : "Send"}
           </button>
         </div>
