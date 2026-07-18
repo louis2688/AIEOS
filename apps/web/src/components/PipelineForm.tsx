@@ -1,16 +1,43 @@
 "use client";
 
-import { memo, useCallback, useId, useRef, useState, useTransition } from "react";
+import { memo, useCallback, useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createPipelineAction } from "@/app/actions";
 import type { PipelineStep, Project } from "@/lib/types";
 
 const defaultAgents = ["software_engineer", "architect", "echo"];
 
+const STARTER_META = {
+  name: "Architect → Implement",
+  description: "Outline architecture, implement from the plan, then echo the result.",
+};
+
+const STARTER_STEPS: PipelineStep[] = [
+  {
+    agent: "architect",
+    goal: "Outline architecture for: {input}",
+  },
+  {
+    agent: "software_engineer",
+    goal: "Implement based on plan: {previous}",
+  },
+  {
+    agent: "echo",
+    goal: "Echo final result: {previous}",
+  },
+];
+
 type StepDraft = PipelineStep & { id: string };
 
 function toPayload(steps: StepDraft[]): PipelineStep[] {
   return steps.map(({ agent, goal }) => ({ agent, goal }));
+}
+
+function makeSteps(prefix: string, steps: PipelineStep[], startAt = 0): StepDraft[] {
+  return steps.map((step, i) => ({
+    ...step,
+    id: `${prefix}-${startAt + i}`,
+  }));
 }
 
 const PipelineStepRow = memo(function PipelineStepRow({
@@ -69,33 +96,59 @@ const PipelineStepRow = memo(function PipelineStepRow({
 export function PipelineForm({
   projects,
   agents = defaultAgents,
+  applyStarter = false,
 }: {
   projects: Project[];
   agents?: string[];
+  applyStarter?: boolean;
 }) {
   const router = useRouter();
   const idPrefix = useId();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const stepsRef = useRef<StepDraft[]>([]);
   const nextId = useRef(2);
+  const starterApplied = useRef(false);
   const [steps, setSteps] = useState<StepDraft[]>(() => {
-    const initial: StepDraft[] = [
+    const initial = makeSteps(idPrefix, [
       {
-        id: `${idPrefix}-0`,
         agent: "architect",
         goal: "Outline architecture for: {input}",
       },
       {
-        id: `${idPrefix}-1`,
         agent: "software_engineer",
-        goal: "Inspect workspace for: {input}",
+        goal: "Implement based on plan: {previous}",
       },
-    ];
+    ]);
+    nextId.current = initial.length;
     // Ref is source of truth for field edits; state only tracks structure (add/remove).
     stepsRef.current = initial;
     return initial;
   });
+
+  const agentOptions = [
+    ...agents,
+    ...STARTER_STEPS.map((s) => s.agent).filter((a) => !agents.includes(a)),
+  ];
+
+  const applyStarterTemplate = useCallback(() => {
+    const next = makeSteps(idPrefix, STARTER_STEPS, nextId.current);
+    nextId.current += STARTER_STEPS.length;
+    stepsRef.current = next;
+    setSteps(next);
+    if (nameRef.current) nameRef.current.value = STARTER_META.name;
+    if (descriptionRef.current) {
+      descriptionRef.current.value = STARTER_META.description;
+    }
+  }, [idPrefix]);
+
+  useEffect(() => {
+    if (!applyStarter || starterApplied.current) return;
+    starterApplied.current = true;
+    applyStarterTemplate();
+  }, [applyStarter, applyStarterTemplate]);
 
   const onAgentChange = useCallback((id: string, agent: string) => {
     stepsRef.current = stepsRef.current.map((s) =>
@@ -133,12 +186,24 @@ export function PipelineForm({
   }, [idPrefix]);
 
   return (
-    <section className="panel">
-      <h2 className="panel-title">New pipeline</h2>
-      <p className="mt-2 text-sm text-[var(--muted)]">
-        Steps run in order. Use <code className="text-[var(--accent)]">{"{input}"}</code>{" "}
-        or <code className="text-[var(--accent)]">{"{previous}"}</code> in goals.
-      </p>
+    <section id="new-pipeline" className="panel scroll-mt-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="panel-title">New pipeline</h2>
+          <p className="mt-2 text-sm text-[var(--muted)]">
+            Steps run in order. Use{" "}
+            <code className="text-[var(--accent)]">{"{input}"}</code> or{" "}
+            <code className="text-[var(--accent)]">{"{previous}"}</code> in goals.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="font-mono text-[10px] tracking-wide text-[var(--accent)] uppercase"
+          onClick={applyStarterTemplate}
+        >
+          Use starter template
+        </button>
+      </div>
       <form
         className="mt-4 space-y-4"
         action={(formData) => {
@@ -157,11 +222,18 @@ export function PipelineForm({
       >
         <label className="block">
           <span className="label">Name</span>
-          <input name="name" required className="field mt-1.5" placeholder="Design → Inspect" />
+          <input
+            ref={nameRef}
+            name="name"
+            required
+            className="field mt-1.5"
+            placeholder="Architect → Implement"
+          />
         </label>
         <label className="block">
           <span className="label">Description</span>
           <textarea
+            ref={descriptionRef}
             name="description"
             rows={2}
             className="field mt-1.5"
@@ -196,7 +268,7 @@ export function PipelineForm({
               key={step.id}
               step={step}
               index={index}
-              agents={agents}
+              agents={agentOptions}
               canRemove={steps.length > 1}
               onAgentChange={onAgentChange}
               onGoalChange={onGoalChange}
