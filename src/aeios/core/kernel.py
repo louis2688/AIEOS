@@ -15,6 +15,7 @@ from aeios.core.syscalls import Syscalls
 from aeios.core.types import Task, TaskStatus, ToolResult
 from aeios.knowledge.vectors import QdrantKnowledgeIndex, try_open_qdrant
 from aeios.memory.store import MemoryStore
+from aeios.persistence.artifacts import ArtifactStore
 from aeios.persistence.db import open_db
 from aeios.persistence.models import ModelStore
 from aeios.persistence.sqlite_store import SqliteTaskStore
@@ -48,6 +49,7 @@ class Kernel:
             data_dir=data_dir,
         )
         self.store = SqliteTaskStore(self.db)
+        self.artifacts = ArtifactStore(self.db)
         self.models = ModelStore(self.db, settings=self.settings)
         self.models.seed_from_env(
             openai_api_key=self.settings.openai_api_key,
@@ -80,6 +82,7 @@ class Kernel:
         self.agents: dict[str, BaseAgent] = {}
         self.tasks: dict[str, Task] = {}
         self._active_task: Task | None = None
+        self._cancel_requested: set[str] = set()
         self._mcp_bridge: McpBridge | None = None
         self.syscalls = Syscalls(self)
 
@@ -197,15 +200,84 @@ class Kernel:
         get_metrics().record_tool_call(name, ok=result.ok)
         return result
 
+    def is_cancel_requested(self, task_id: str) -> bool:
+        return task_id in self._cancel_requested
+
+    def request_cancel(self, task_id: str) -> Task | None:
+        """Request cancellation of an in-flight or queued task."""
+        task = self.get_task(task_id)
+        if not task:
+            return None
+        if task.status in {
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+        }:
+            return task
+        self._cancel_requested.add(task_id)
+        if task.status in {
+            TaskStatus.PENDING,
+            TaskStatus.PLANNING,
+            TaskStatus.RUNNING,
+        }:
+            task.error = task.error or "Cancelled by user"
+            self.set_task_status(task, TaskStatus.CANCELLED)
+        return self.get_task(task_id) or task
+
+    def _apply_cancel_if_requested(self, task: Task) -> bool:
+        if task.id not in self._cancel_requested:
+            return False
+        if task.status != TaskStatus.CANCELLED:
+            task.error = task.error or "Cancelled by user"
+            self.set_task_status(task, TaskStatus.CANCELLED)
+        return True
+
+    def _persist_filesystem_artifact(
+        self, task: Task, result: ToolResult, kwargs: dict[str, Any]
+    ) -> None:
+        if not result.ok:
+            return
+        action = str(kwargs.get("action") or "").lower()
+        if action not in {"write", "update"}:
+            return
+        path = kwargs.get("path")
+        content = kwargs.get("content")
+        if not isinstance(path, str) or not path.strip():
+            return
+        if content is None:
+            # Prefer tool output payload when content not in kwargs
+            out = result.output
+            if isinstance(out, dict) and isinstance(out.get("content"), str):
+                content = out["content"]
+            else:
+                return
+        try:
+            self.artifacts.upsert(
+                task_id=task.id,
+                path=path,
+                content=str(content),
+                owner_id=task.owner_id or "local",
+            )
+        except Exception:  # noqa: BLE001 — persistence must not break tools
+            self.store.audit(
+                "artifact_persist_failed",
+                task_id=task.id,
+                detail={"path": path},
+            )
+
     def call_tool(self, name: str, **kwargs: Any) -> ToolResult:
         """Invoke a tool with a bounded reflection/retry loop on failure."""
         task = self._active_task
         task_id = task.id if task else None
+        if task is not None and self._apply_cancel_if_requested(task):
+            return ToolResult(ok=False, error="Task cancelled")
         max_retries = max(0, self.max_tool_retries)
         unknown = name not in self.tools
         attempts = 0
 
         while True:
+            if task is not None and self._apply_cancel_if_requested(task):
+                return ToolResult(ok=False, error="Task cancelled")
             result = self._invoke_tool(name, **kwargs)
             attempts += 1
             self.store.audit(
@@ -218,6 +290,8 @@ class Kernel:
                     "attempt": attempts,
                 },
             )
+            if result.ok and name == "filesystem" and task is not None:
+                self._persist_filesystem_artifact(task, result, kwargs)
             if result.ok or unknown or attempts > max_retries:
                 return result
 
@@ -228,7 +302,9 @@ class Kernel:
                 tool=name,
                 error=result.error or "unknown error",
                 attempt=retry_num,
-                agent_role=(task.agent or self.default_agent) if task else self.default_agent,
+                agent_role=(task.agent or self.default_agent)
+                if task
+                else self.default_agent,
             )
             if task is not None:
                 task.plan = revised_plan
@@ -257,30 +333,41 @@ class Kernel:
                 },
             )
 
-    def get_task(self, task_id: str) -> Task | None:
+    def get_task(
+        self, task_id: str, *, owner_id: str | None = None
+    ) -> Task | None:
         if task_id in self.tasks:
-            return self.tasks[task_id]
-        return self.store.get_task(task_id)
+            task = self.tasks[task_id]
+            if owner_id is not None and (task.owner_id or "local") != owner_id:
+                return None
+            return task
+        return self.store.get_task(task_id, owner_id=owner_id)
 
-    def list_tasks(self, limit: int = 50) -> list[Task]:
-        return self.store.list_tasks(limit=limit)
+    def list_tasks(
+        self, limit: int = 50, *, owner_id: str | None = None
+    ) -> list[Task]:
+        return self.store.list_tasks(limit=limit, owner_id=owner_id)
 
-    def run_goal(self, goal: str, agent: str | None = None) -> Task:
+    def run_goal(
+        self, goal: str, agent: str | None = None, *, owner_id: str = "local"
+    ) -> Task:
         """Create and run a goal synchronously (blocks until finished)."""
-        task = self._prepare_task(goal, agent)
-        if task.status == TaskStatus.FAILED:
+        task = self._prepare_task(goal, agent, owner_id=owner_id)
+        if task.status in {TaskStatus.FAILED, TaskStatus.CANCELLED}:
             self._record_task_finished(ok=False)
             return task
         self.scheduler.enqueue(task)
         self.scheduler.drain(lambda queued: self._execute_queued(queued))
         return self.get_task(task.id) or task
 
-    def run_goal_async(self, goal: str, agent: str | None = None) -> Task:
+    def run_goal_async(
+        self, goal: str, agent: str | None = None, *, owner_id: str = "local"
+    ) -> Task:
         """Create a task and execute it on a daemon thread; return immediately."""
         import threading
 
-        task = self._prepare_task(goal, agent)
-        if task.status == TaskStatus.FAILED:
+        task = self._prepare_task(goal, agent, owner_id=owner_id)
+        if task.status in {TaskStatus.FAILED, TaskStatus.CANCELLED}:
             self._record_task_finished(ok=False)
             return task
         self.scheduler.enqueue(task)
@@ -300,34 +387,66 @@ class Kernel:
         except Exception:  # noqa: BLE001
             pass
 
-    def _prepare_task(self, goal: str, agent: str | None = None) -> Task:
+    def _prepare_task(
+        self,
+        goal: str,
+        agent: str | None = None,
+        *,
+        owner_id: str = "local",
+    ) -> Task:
         agent_name = agent or self.default_agent
+        owner = (owner_id or "local").strip() or "local"
         if agent_name not in self.agents:
-            task = Task(goal=goal, status=TaskStatus.FAILED, agent=agent_name)
+            task = Task(
+                goal=goal,
+                status=TaskStatus.FAILED,
+                agent=agent_name,
+                owner_id=owner,
+            )
             task.error = f"Unknown agent: {agent_name}"
             self._persist(task, event="task_failed_unknown_agent")
             return task
 
-        task = Task(goal=goal, status=TaskStatus.PENDING, agent=agent_name)
+        task = Task(
+            goal=goal,
+            status=TaskStatus.PENDING,
+            agent=agent_name,
+            owner_id=owner,
+        )
         self._persist(task, event="task_created")
         self.set_task_status(task, TaskStatus.PLANNING)
         return task
 
     def _execute_queued(self, queued: Task) -> None:
+        if self._apply_cancel_if_requested(queued):
+            self._cancel_requested.discard(queued.id)
+            self._record_task_finished(ok=False)
+            return
         agent_name = queued.agent or self.default_agent
         self.set_task_status(queued, TaskStatus.RUNNING)
+        if self._apply_cancel_if_requested(queued):
+            self._cancel_requested.discard(queued.id)
+            self._record_task_finished(ok=False)
+            return
         runner = self.agents[agent_name]
         self._active_task = queued
         try:
             finished = runner.execute(queued)
         finally:
             self._active_task = None
-        # Agents may already set completed/failed; normalize if still running
-        if finished.status == TaskStatus.RUNNING:
+        # Prefer cancel flag over agent-assigned terminal status (agents set
+        # status fields directly and can race a cancel request).
+        if finished.id in self._cancel_requested:
+            finished.status = TaskStatus.CANCELLED
+            finished.error = finished.error or "Cancelled by user"
+            finished.touch()
+            self._persist(finished, event="status:cancelled")
+        elif finished.status == TaskStatus.RUNNING:
             self.set_task_status(finished, TaskStatus.COMPLETED)
         else:
             self._persist(finished, event=f"task_{finished.status.value}")
 
+        self._cancel_requested.discard(finished.id)
         self.memory.append_history(
             {
                 "id": finished.id,

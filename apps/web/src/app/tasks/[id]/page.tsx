@@ -76,7 +76,8 @@ export default async function TaskDetailPage({
         <div>
           <p className="label">Artifacts</p>
           <p className="mt-1 text-xs text-[var(--muted)]">
-            Files written during this task. On Render free, disk is ephemeral after redeploy/sleep.
+            Files written during this task. Content is also stored in the database so it
+            survives ephemeral disk on Render free.
           </p>
           <TaskArtifacts artifacts={artifacts} />
         </div>

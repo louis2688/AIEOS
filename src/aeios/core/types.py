@@ -18,6 +18,7 @@ class TaskStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class Task(BaseModel):
@@ -25,6 +26,7 @@ class Task(BaseModel):
     goal: str
     status: TaskStatus = TaskStatus.PENDING
     agent: str | None = None
+    owner_id: str = "local"
     plan: list[str] = Field(default_factory=list)
     steps: list[dict[str, Any]] = Field(default_factory=list)
     result: str | None = None

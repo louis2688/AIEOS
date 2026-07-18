@@ -5,8 +5,10 @@
 # Free Web Services have no persistent disks. Do NOT use SQLite on Render —
 # wire DATABASE_URL from the managed Postgres database below (fromDatabase).
 # Free Postgres expires ~30 days after creation — upgrade to Basic (or higher)
-# in the dashboard before expiry if you need durable staging data.
+# in the dashboard before expiry if you need durable staging data
+# (docs/DEPLOY.md → Ops hardening / Free Postgres expiry).
 # Free web sleeps when idle; first request after sleep can take ~30–60s.
+# Optional: external cron GET /health every ~12m (docs/DEPLOY.md keep-alive).
 
 databases:
   - name: aeios-db

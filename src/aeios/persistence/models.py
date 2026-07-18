@@ -59,6 +59,7 @@ class ModelRecord:
     enabled: bool
     created_at: str
     updated_at: str
+    owner_id: str = "local"
 
     def public_dict(self) -> dict:
         stored = bool(self.api_key)
@@ -81,6 +82,7 @@ class ModelRecord:
             "api_key_masked": masked,
             "is_default": self.is_default,
             "enabled": self.enabled,
+            "owner_id": self.owner_id or "local",
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -135,6 +137,12 @@ class ModelStore:
                 CREATE INDEX IF NOT EXISTS idx_models_default ON models(is_default);
                 """
             )
+            self._db.ensure_column(
+                "models", "owner_id", "TEXT NOT NULL DEFAULT 'local'"
+            )
+            self._db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_models_owner ON models(owner_id)"
+            )
             self._db.commit()
 
     def _prepare_stored_key(self, api_key: str | None) -> str | None:
@@ -175,6 +183,7 @@ class ModelStore:
         api_key: str | None = None,
         is_default: bool = False,
         enabled: bool = True,
+        owner_id: str = "local",
     ) -> ModelRecord:
         provider = provider.strip().lower()
         if provider not in PROVIDERS:
@@ -190,6 +199,7 @@ class ModelStore:
         stored_key = self._prepare_stored_key(plaintext)
 
         now = utcnow_iso()
+        owner = (owner_id or "local").strip() or "local"
         record = ModelRecord(
             id=uuid4().hex[:12],
             name=name.strip(),
@@ -201,16 +211,20 @@ class ModelStore:
             enabled=enabled,
             created_at=now,
             updated_at=now,
+            owner_id=owner,
         )
         with self._db.lock():
             if record.is_default:
-                self._db.execute("UPDATE models SET is_default = 0")
+                self._db.execute(
+                    "UPDATE models SET is_default = 0 WHERE owner_id = ?",
+                    (owner,),
+                )
             self._db.execute(
                 """
                 INSERT INTO models
                     (id, name, provider, model_id, base_url, api_key,
-                     is_default, enabled, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     is_default, enabled, created_at, updated_at, owner_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.id,
@@ -223,53 +237,104 @@ class ModelStore:
                     1 if record.enabled else 0,
                     record.created_at,
                     record.updated_at,
+                    owner,
                 ),
             )
             self._db.commit()
         return record
 
-    def list(self, limit: int = 100) -> list[ModelRecord]:
+    def list(
+        self, limit: int = 100, *, owner_id: str | None = None
+    ) -> list[ModelRecord]:
         with self._db.lock():
-            rows = self._db.execute(
-                "SELECT * FROM models ORDER BY is_default DESC, created_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            if owner_id is not None:
+                rows = self._db.execute(
+                    """
+                    SELECT * FROM models WHERE owner_id = ?
+                    ORDER BY is_default DESC, created_at DESC LIMIT ?
+                    """,
+                    (owner_id, limit),
+                ).fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM models ORDER BY is_default DESC, created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
         return [self._row(r) for r in rows]
 
-    def get(self, model_id: str) -> ModelRecord | None:
+    def get(
+        self, model_id: str, *, owner_id: str | None = None
+    ) -> ModelRecord | None:
         with self._db.lock():
-            row = self._db.execute(
-                "SELECT * FROM models WHERE id = ?", (model_id,)
-            ).fetchone()
+            if owner_id is not None:
+                row = self._db.execute(
+                    "SELECT * FROM models WHERE id = ? AND owner_id = ?",
+                    (model_id, owner_id),
+                ).fetchone()
+            else:
+                row = self._db.execute(
+                    "SELECT * FROM models WHERE id = ?", (model_id,)
+                ).fetchone()
         return self._row(row) if row else None
 
-    def get_default(self) -> ModelRecord | None:
+    def get_default(self, *, owner_id: str | None = None) -> ModelRecord | None:
         with self._db.lock():
-            row = self._db.execute(
-                """
-                SELECT * FROM models
-                WHERE is_default = 1 AND enabled = 1
-                LIMIT 1
-                """
-            ).fetchone()
-            if row:
-                return self._row(row)
-            row = self._db.execute(
-                """
-                SELECT * FROM models WHERE enabled = 1
-                ORDER BY created_at DESC LIMIT 1
-                """
-            ).fetchone()
+            if owner_id is not None:
+                row = self._db.execute(
+                    """
+                    SELECT * FROM models
+                    WHERE is_default = 1 AND enabled = 1 AND owner_id = ?
+                    LIMIT 1
+                    """,
+                    (owner_id,),
+                ).fetchone()
+                if row:
+                    return self._row(row)
+                row = self._db.execute(
+                    """
+                    SELECT * FROM models WHERE enabled = 1 AND owner_id = ?
+                    ORDER BY created_at DESC LIMIT 1
+                    """,
+                    (owner_id,),
+                ).fetchone()
+            else:
+                row = self._db.execute(
+                    """
+                    SELECT * FROM models
+                    WHERE is_default = 1 AND enabled = 1
+                    LIMIT 1
+                    """
+                ).fetchone()
+                if row:
+                    return self._row(row)
+                row = self._db.execute(
+                    """
+                    SELECT * FROM models WHERE enabled = 1
+                    ORDER BY created_at DESC LIMIT 1
+                    """
+                ).fetchone()
         return self._row(row) if row else None
 
-    def set_default(self, model_id: str) -> ModelRecord | None:
+    def set_default(
+        self, model_id: str, *, owner_id: str | None = None
+    ) -> ModelRecord | None:
         with self._db.lock():
-            row = self._db.execute(
-                "SELECT * FROM models WHERE id = ?", (model_id,)
-            ).fetchone()
+            if owner_id is not None:
+                row = self._db.execute(
+                    "SELECT * FROM models WHERE id = ? AND owner_id = ?",
+                    (model_id, owner_id),
+                ).fetchone()
+            else:
+                row = self._db.execute(
+                    "SELECT * FROM models WHERE id = ?", (model_id,)
+                ).fetchone()
             if not row:
                 return None
-            self._db.execute("UPDATE models SET is_default = 0")
+            owner = row.get("owner_id") or "local"
+            self._db.execute(
+                "UPDATE models SET is_default = 0 WHERE owner_id = ?",
+                (owner,),
+            )
             self._db.execute(
                 """
                 UPDATE models SET is_default = 1, updated_at = ?
@@ -283,9 +348,17 @@ class ModelStore:
             ).fetchone()
         return self._row(row) if row else None
 
-    def delete(self, model_id: str) -> bool:
+    def delete(self, model_id: str, *, owner_id: str | None = None) -> bool:
         with self._db.lock():
-            cur = self._db.execute("DELETE FROM models WHERE id = ?", (model_id,))
+            if owner_id is not None:
+                cur = self._db.execute(
+                    "DELETE FROM models WHERE id = ? AND owner_id = ?",
+                    (model_id, owner_id),
+                )
+            else:
+                cur = self._db.execute(
+                    "DELETE FROM models WHERE id = ?", (model_id,)
+                )
             self._db.commit()
             return cur.rowcount > 0
 
@@ -298,8 +371,9 @@ class ModelStore:
         base_url: str | None = None,
         api_key: str | None = None,
         enabled: bool | None = None,
+        owner_id: str | None = None,
     ) -> ModelRecord | None:
-        current = self.get(model_pk)
+        current = self.get(model_pk, owner_id=owner_id)
         if not current:
             return None
         next_name = name.strip() if name is not None else current.name
@@ -342,7 +416,7 @@ class ModelStore:
                 ),
             )
             self._db.commit()
-        return self.get(model_pk)
+        return self.get(model_pk, owner_id=owner_id)
 
     def seed_from_env(
         self,
@@ -392,4 +466,5 @@ class ModelStore:
             enabled=bool(row["enabled"]),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            owner_id=row.get("owner_id") or "local",
         )

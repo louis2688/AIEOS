@@ -16,8 +16,10 @@ class BaseAgent(ABC):
     def __init__(self, kernel: Kernel) -> None:
         self.kernel = kernel
 
-    def plan(self, goal: str) -> list[str]:
-        return self.kernel.planner.plan(goal, agent_role=self.role)
+    def plan(self, goal: str, *, owner_id: str | None = None) -> list[str]:
+        return self.kernel.planner.plan(
+            goal, agent_role=self.role, owner_id=owner_id
+        )
 
     def call_tool(self, name: str, **kwargs: Any) -> ToolResult:
         return self.kernel.call_tool(name, **kwargs)

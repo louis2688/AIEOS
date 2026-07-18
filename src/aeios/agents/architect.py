@@ -129,7 +129,7 @@ class ArchitectAgent(BaseAgent):
     def execute(self, task: Task) -> Task:
         task.status = TaskStatus.RUNNING
         # Plan
-        task.plan = self.plan(task.goal)
+        task.plan = self.plan(task.goal, owner_id=task.owner_id)
         task.touch()
 
         observations: list[str] = []

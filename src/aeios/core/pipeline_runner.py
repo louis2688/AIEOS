@@ -53,7 +53,9 @@ class PipelineRunner:
             if not goal.strip():
                 goal = input_goal
 
-            task = self.kernel.run_goal(goal, agent=step.agent)
+            task = self.kernel.run_goal(
+                goal, agent=step.agent, owner_id=pipeline.owner_id or "local"
+            )
             step_result = {
                 "index": index,
                 "agent": step.agent,

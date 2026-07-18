@@ -15,21 +15,38 @@ class Syscalls:
         self._kernel = kernel
 
     def execute_task(
-        self, goal: str, agent: str | None = None, *, wait: bool = True
+        self,
+        goal: str,
+        agent: str | None = None,
+        *,
+        wait: bool = True,
+        owner_id: str = "local",
     ) -> Task:
         from aeios.observability.metrics import get_metrics
 
         get_metrics().record_task_started()
         # Finished metric is recorded in Kernel._execute_queued.
         if wait:
-            return self._kernel.run_goal(goal, agent=agent)
-        return self._kernel.run_goal_async(goal, agent=agent)
+            return self._kernel.run_goal(goal, agent=agent, owner_id=owner_id)
+        return self._kernel.run_goal_async(goal, agent=agent, owner_id=owner_id)
 
-    def get_task(self, task_id: str) -> Task | None:
-        return self._kernel.get_task(task_id)
+    def get_task(
+        self, task_id: str, *, owner_id: str | None = None
+    ) -> Task | None:
+        return self._kernel.get_task(task_id, owner_id=owner_id)
 
-    def list_tasks(self, limit: int = 50) -> list[Task]:
-        return self._kernel.list_tasks(limit=limit)
+    def list_tasks(
+        self, limit: int = 50, *, owner_id: str | None = None
+    ) -> list[Task]:
+        return self._kernel.list_tasks(limit=limit, owner_id=owner_id)
+
+    def cancel_task(
+        self, task_id: str, *, owner_id: str | None = None
+    ) -> Task | None:
+        task = self._kernel.get_task(task_id, owner_id=owner_id)
+        if not task:
+            return None
+        return self._kernel.request_cancel(task_id)
 
     def request_memory(self, action: str, key: str, value: Any = None) -> Any:
         if action == "get":
