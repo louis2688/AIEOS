@@ -1,15 +1,40 @@
 @import "tailwindcss";
 
-:root {
-  --bg: #0e1410;
+/* Dark (default) — industrial terminal control plane */
+:root,
+html.dark,
+html[data-theme="dark"] {
+  --bg: #0c1210;
+  --bg-elevated: #101813;
   --panel: #151c17;
   --panel-2: #1b241e;
   --ink: #e8f0e9;
   --muted: #8fa094;
   --line: #2a352c;
   --accent: #b6f25c;
+  --accent-ink: #102014;
   --danger: #ff7b72;
   --glow: rgba(182, 242, 92, 0.12);
+  --sidebar-w: 15.5rem;
+  --sidebar-w-collapsed: 4.5rem;
+  --shadow-soft: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+/* Light — clean ops console, same accent language */
+html.light,
+html[data-theme="light"] {
+  --bg: #eef2ec;
+  --bg-elevated: #f7f9f5;
+  --panel: #ffffff;
+  --panel-2: #f2f5f0;
+  --ink: #152019;
+  --muted: #5c6b60;
+  --line: #d5ddd6;
+  --accent: #3d8f2e;
+  --accent-ink: #f4fff0;
+  --danger: #c23b32;
+  --glow: rgba(61, 143, 46, 0.12);
+  --shadow-soft: 0 12px 32px rgba(21, 32, 25, 0.08);
 }
 
 @theme inline {
@@ -28,24 +53,377 @@ body {
 
 .aeios-grid {
   background-image:
-    linear-gradient(to right, rgba(182, 242, 92, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(182, 242, 92, 0.05) 1px, transparent 1px);
+    linear-gradient(to right, color-mix(in srgb, var(--accent) 12%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 12%, transparent) 1px, transparent 1px);
   background-size: 32px 32px;
-  mask-image: radial-gradient(ellipse at top, black 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse at top left, black 15%, transparent 70%);
 }
 
 .aeios-glow {
-  background: radial-gradient(ellipse at top, var(--glow), transparent 65%);
+  background: radial-gradient(ellipse at top left, var(--glow), transparent 60%);
 }
 
-/* Component styles must stay in @layer so Tailwind utilities (e.g. md:w-56, flex-1) can override. */
+/* ——— Shell / sidebar ——— */
+.shell {
+  position: relative;
+  display: flex;
+  min-height: 100%;
+  min-height: 100dvh;
+}
+
+.shell-main {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  padding: 1.25rem 1.25rem 2.5rem;
+}
+
+@media (min-width: 768px) {
+  .shell-main {
+    padding: 1.75rem 2rem 3rem;
+  }
+}
+
+.shell-header {
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.shell-kicker {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.shell-title {
+  margin-top: 0.35rem;
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(1.75rem, 3vw, 2.25rem);
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  line-height: 1.15;
+}
+
+.shell-blurb {
+  margin-top: 0.45rem;
+  max-width: 36rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.shell-content {
+  flex: 1;
+  width: 100%;
+  max-width: 72rem;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: none;
+  flex-direction: column;
+  width: var(--sidebar-w);
+  height: 100dvh;
+  flex-shrink: 0;
+  border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  backdrop-filter: blur(10px);
+  transition: width 220ms ease;
+}
+
+@media (min-width: 768px) {
+  .sidebar {
+    display: flex;
+  }
+}
+
+.sidebar--collapsed {
+  width: var(--sidebar-w-collapsed);
+}
+
+.sidebar--collapsed .sidebar-brand-text,
+.sidebar--collapsed .sidebar-link-label {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.sidebar--collapsed .sidebar-brand {
+  justify-content: center;
+  gap: 0;
+  padding-inline: 0.5rem;
+}
+
+.sidebar--collapsed .sidebar-link {
+  justify-content: center;
+  padding-inline: 0.65rem;
+}
+
+.sidebar--collapsed .sidebar-footer {
+  align-items: center;
+}
+
+.sidebar--collapsed .sidebar-user {
+  display: flex;
+  justify-content: center;
+}
+
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 1rem 0.75rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.sidebar-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
+  border-radius: 0.55rem;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--font-display), ui-sans-serif, sans-serif;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.sidebar-brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  transition: opacity 160ms ease;
+}
+
+.sidebar-brand-kicker {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.sidebar-brand-title {
+  font-family: var(--font-display), ui-sans-serif, sans-serif;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.85rem 0.65rem;
+  overflow-y: auto;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  border-radius: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  color: var(--muted);
+  text-decoration: none;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    border-color 140ms ease;
+  border: 1px solid transparent;
+}
+
+.sidebar-link:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--panel-2) 80%, transparent);
+  border-color: var(--line);
+}
+
+.sidebar-link--active {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.sidebar-link--active:hover {
+  color: var(--accent-ink);
+  background: color-mix(in srgb, var(--accent) 92%, white);
+  border-color: transparent;
+  filter: brightness(1.02);
+}
+
+.sidebar-link svg {
+  flex-shrink: 0;
+}
+
+.sidebar-link-label {
+  white-space: nowrap;
+  transition: opacity 160ms ease;
+}
+
+.sidebar-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.sidebar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.sidebar-icon-btn:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: var(--panel-2);
+}
+
+.sidebar-icon-btn:focus-visible,
+.sidebar-link:focus-visible,
+.sidebar-mobile-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sidebar-mobile-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: fixed;
+  top: 0.85rem;
+  left: 0.85rem;
+  z-index: 50;
+  border-radius: 0.55rem;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  padding: 0.55rem 0.75rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: var(--shadow-soft);
+}
+
+@media (min-width: 768px) {
+  .sidebar-mobile-trigger {
+    display: none;
+  }
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+.sidebar-mobile-close {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .shell-main {
+    padding-top: 3.75rem;
+  }
+
+  .sidebar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: min(18rem, 86vw);
+    transform: translateX(-105%);
+    transition: transform 220ms ease;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .sidebar--mobile-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    border: 0;
+    background: rgba(8, 12, 10, 0.45);
+    backdrop-filter: blur(2px);
+  }
+
+  .sidebar-mobile-close {
+    display: inline-flex;
+  }
+
+  .sidebar-collapse-btn {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar-link,
+  .sidebar-icon-btn,
+  .sidebar-brand-text,
+  .sidebar-link-label {
+    transition: none !important;
+  }
+}
+
+/* Component styles must stay in @layer so Tailwind utilities can override. */
 @layer components {
   .panel {
     border: 1px solid var(--line);
-    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    background: color-mix(in srgb, var(--panel) 94%, transparent);
     border-radius: 0.75rem;
     padding: 1.25rem;
     backdrop-filter: blur(6px);
+    box-shadow: var(--shadow-soft);
   }
 
   .panel-title {
@@ -86,7 +464,7 @@ body {
     justify-content: center;
     border-radius: 0.5rem;
     background: var(--accent);
-    color: #102014;
+    color: var(--accent-ink);
     font-family: var(--font-mono), ui-monospace, monospace;
     font-size: 11px;
     letter-spacing: 0.12em;

@@ -12,7 +12,7 @@ export function PageFrame({ children }: { children: React.ReactNode }) {
     return (
       <div className="relative min-h-full">
         <div className="pointer-events-none absolute inset-0 aeios-grid opacity-40" />
-        <div className="relative mx-auto w-full max-w-6xl px-5 py-10">
+        <div className="relative mx-auto flex w-full max-w-lg flex-col px-5 py-12">
           <p className="mb-8 text-center font-mono text-xs tracking-[0.22em] text-[var(--accent)] uppercase">
             AEIOS
           </p>

@@ -1,15 +1,50 @@
-import Link from "next/link";
-import { UserMenu } from "@/components/UserMenu";
+import { Sidebar } from "@/components/Sidebar";
 
-const links = [
-  { href: "/", label: "Control" },
-  { href: "/tasks", label: "Tasks" },
-  { href: "/pipelines", label: "Pipelines" },
-  { href: "/knowledge", label: "Knowledge" },
-  { href: "/models", label: "Models" },
-  { href: "/assistant", label: "Assistant" },
-  { href: "/projects", label: "Projects" },
-];
+const titles: Record<string, { title: string; blurb: string }> = {
+  "/": {
+    title: "Control",
+    blurb: "Kernel status, run a goal, and recent task activity.",
+  },
+  "/assistant": {
+    title: "Assistant",
+    blurb: "Chat with the kernel — goals route through agents and tools.",
+  },
+  "/tasks": {
+    title: "Tasks",
+    blurb: "History of executed goals and their step traces.",
+  },
+  "/pipelines": {
+    title: "Pipelines",
+    blurb: "Multi-step workflows with run history.",
+  },
+  "/projects": {
+    title: "Projects",
+    blurb: "Workspace containers for engineering work.",
+  },
+  "/knowledge": {
+    title: "Knowledge",
+    blurb: "Search tasks, pipelines, projects, and memory.",
+  },
+  "/models": {
+    title: "Models",
+    blurb: "Provider registry for the planner-backed LLM path.",
+  },
+};
+
+function pageMeta(pathname: string) {
+  if (titles[pathname]) return titles[pathname];
+  const base = Object.keys(titles)
+    .filter((k) => k !== "/" && pathname.startsWith(k))
+    .sort((a, b) => b.length - a.length)[0];
+  if (base) return titles[base];
+  if (pathname.startsWith("/tasks/")) {
+    return { title: "Task detail", blurb: "Plan, steps, result, and artifacts." };
+  }
+  if (pathname.startsWith("/pipelines/")) {
+    return { title: "Pipeline detail", blurb: "Run the workflow and inspect history." };
+  }
+  return { title: "AEIOS", blurb: "Kernel-backed control plane." };
+}
 
 export function AppShell({
   children,
@@ -18,49 +53,22 @@ export function AppShell({
   children: React.ReactNode;
   pathname: string;
 }) {
+  const meta = pageMeta(pathname);
+
   return (
-    <div className="relative min-h-full">
-      <div className="pointer-events-none absolute inset-0 aeios-grid opacity-40" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-56 aeios-glow" />
-      <div className="relative mx-auto flex min-h-full w-full max-w-6xl flex-col px-5 py-6 md:px-8">
-        <header className="mb-8 flex flex-col gap-5 border-b border-[var(--line)] pb-5 md:flex-row md:items-end md:justify-between">
+    <div className="shell">
+      <div className="pointer-events-none absolute inset-0 aeios-grid opacity-35" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-64 aeios-glow" />
+      <Sidebar pathname={pathname} />
+      <div className="shell-main">
+        <header className="shell-header">
           <div>
-            <p className="font-mono text-xs tracking-[0.22em] text-[var(--accent)] uppercase">
-              AEIOS
-            </p>
-            <h1 className="mt-1 font-display text-3xl tracking-tight text-[var(--ink)] md:text-4xl">
-              Engineering OS
-            </h1>
-            <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
-              Kernel-backed control plane for agents, tasks, and project memory.
-            </p>
-          </div>
-          <div className="flex flex-col items-start gap-3 md:items-end">
-            <UserMenu />
-            <nav className="flex flex-wrap gap-2">
-              {links.map((link) => {
-                const active =
-                  link.href === "/"
-                    ? pathname === "/"
-                    : pathname.startsWith(link.href);
-                return (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className={`rounded-md px-3 py-1.5 font-mono text-xs tracking-wide uppercase transition ${
-                      active
-                        ? "bg-[var(--accent)] text-[#102014]"
-                        : "border border-[var(--line)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--ink)]"
-                    }`}
-                  >
-                    {link.label}
-                  </Link>
-                );
-              })}
-            </nav>
+            <p className="shell-kicker">AEIOS</p>
+            <h1 className="shell-title">{meta.title}</h1>
+            <p className="shell-blurb">{meta.blurb}</p>
           </div>
         </header>
-        <main className="flex-1 pb-10">{children}</main>
+        <main className="shell-content">{children}</main>
       </div>
     </div>
   );
