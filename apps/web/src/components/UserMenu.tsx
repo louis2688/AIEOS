@@ -18,7 +18,7 @@ export function UserMenu() {
       <SignInButton mode="modal">
         <button
           type="button"
-          className="rounded-md border border-[var(--line)] px-3 py-1.5 font-mono text-xs tracking-wide text-[var(--muted)] uppercase transition hover:border-[var(--accent)] hover:text-[var(--ink)]"
+          className="rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 py-1.5 font-mono text-xs tracking-wide text-[var(--muted)] uppercase transition hover:border-[var(--accent)] hover:text-[var(--ink)]"
         >
           Sign in
         </button>
