@@ -10,6 +10,7 @@ import {
   deletePipeline,
   deleteProject,
   getPipelineRun,
+  cancelTask,
   getTask,
   getTaskArtifacts,
   pollPipelineRun,
@@ -104,6 +105,27 @@ export async function getTaskArtifactsAction(taskId: string) {
     return {
       ok: false as const,
       error: err instanceof Error ? err.message : "Failed to load artifacts",
+    };
+  }
+}
+
+export async function cancelTaskAction(taskId: string) {
+  try {
+    await requireUser();
+  } catch {
+    return { ok: false as const, error: "Sign in required" };
+  }
+  try {
+    const task = await cancelTask(taskId);
+    revalidatePath("/");
+    revalidatePath("/tasks");
+    revalidatePath("/assistant");
+    revalidatePath(`/tasks/${task.id}`);
+    return { ok: true as const, task };
+  } catch (err) {
+    return {
+      ok: false as const,
+      error: err instanceof Error ? err.message : "Failed to cancel task",
     };
   }
 }

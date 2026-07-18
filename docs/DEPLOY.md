@@ -131,9 +131,11 @@ CLI note: `render` CLI / Blueprint apply typically needs a logged-in account or 
 
 ## Live progress & artifacts
 
-- Tasks / pipeline runs support `?wait=false` — returns immediately; poll `GET /v1/tasks/{id}` or `GET /v1/pipeline-runs/{id}` until `completed` / `failed`.
-- Dashboard Assistant and Run pipeline UIs poll for live status.
-- `GET /v1/tasks/{id}/artifacts` lists files written during the task (content if still on disk). **Filesystem writes under `/app` on Render free web are ephemeral** (no disk); Postgres holds task/pipeline metadata only.
+- Tasks / pipeline runs support `?wait=false` — returns immediately; poll `GET /v1/tasks/{id}` or `GET /v1/pipeline-runs/{id}` until `completed` / `failed` / `cancelled`.
+- SSE: `GET /v1/tasks/{id}/events` streams task JSON until terminal; dashboard proxies via `/api/tasks/{id}/events`.
+- Cancel: `POST /v1/tasks/{id}/cancel` (Assistant Cancel button).
+- Tasks and models are scoped per Clerk `sub` (`owner_id`), same as projects/pipelines.
+- `GET /v1/tasks/{id}/artifacts` merges durable DB rows with on-disk files. **Filesystem under `/app` on Render free is ephemeral**; artifact **content** is stored in Postgres/SQLite so it survives redeploy/sleep.
 
 ## Model library in production
 
@@ -177,6 +179,25 @@ Mitigations (pick when staging pain is real):
 
 - Upgrade the web service off the free plan (always-on).
 - Or accept cold starts for dogfooding; retry once if the dashboard times out on the first call after a long idle.
+- Optional **keep-alive ping**: schedule an external cron (GitHub Actions, cron-job.org, UptimeRobot) to `GET /health` every **10–14 minutes**. This reduces sleep on free tier but is not guaranteed forever — Render may still throttle. Prefer upgrading the web plan if always-on matters.
+
+Example GitHub Actions keep-alive (optional; store host as a repo variable):
+
+```yaml
+# .github/workflows/keepalive.yml
+name: keepalive-api
+on:
+  schedule:
+    - cron: "*/12 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fsS -o /dev/null -w "%{http_code}\n" "${{ vars.AEIOS_API_HEALTH_URL }}"
+```
+
+Set `AEIOS_API_HEALTH_URL` to `https://aeios-api.onrender.com/health` (or your host).
 
 ### Healthcheck URL
 

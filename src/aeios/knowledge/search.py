@@ -68,7 +68,7 @@ class KnowledgeSearch:
         hits: list[KnowledgeHit] = []
 
         if "task" in allowed:
-            hits.extend(self._search_tasks(q))
+            hits.extend(self._search_tasks(q, owner_id=owner_id))
         if "pipeline" in allowed:
             hits.extend(self._search_pipelines(q, owner_id=owner_id))
         if "pipeline_run" in allowed:
@@ -86,9 +86,11 @@ class KnowledgeSearch:
         hits.sort(key=lambda h: (-h.score, h.kind, h.id))
         return hits[:limit]
 
-    def _search_tasks(self, query: str) -> list[KnowledgeHit]:
+    def _search_tasks(
+        self, query: str, *, owner_id: str | None = None
+    ) -> list[KnowledgeHit]:
         hits: list[KnowledgeHit] = []
-        for task in self.kernel.store.list_tasks(limit=500):
+        for task in self.kernel.store.list_tasks(limit=500, owner_id=owner_id):
             blob = " ".join(
                 [
                     task.id,

@@ -51,6 +51,12 @@ class SqliteTaskStore:
                 CREATE INDEX IF NOT EXISTS idx_audit_task ON audit_log(task_id);
                 """
             )
+            self._db.ensure_column(
+                "tasks", "owner_id", "TEXT NOT NULL DEFAULT 'local'"
+            )
+            self._db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner_id)"
+            )
             self._db.commit()
 
     def save_task(self, task: Task) -> None:
@@ -58,12 +64,14 @@ class SqliteTaskStore:
             self._db.execute(
                 """
                 INSERT INTO tasks (
-                    id, goal, status, agent, plan, steps, result, error, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, goal, status, agent, owner_id, plan, steps, result, error,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     goal=excluded.goal,
                     status=excluded.status,
                     agent=excluded.agent,
+                    owner_id=excluded.owner_id,
                     plan=excluded.plan,
                     steps=excluded.steps,
                     result=excluded.result,
@@ -75,6 +83,7 @@ class SqliteTaskStore:
                     task.goal,
                     task.status.value,
                     task.agent,
+                    task.owner_id or "local",
                     json.dumps(task.plan),
                     json.dumps(task.steps),
                     task.result,
@@ -89,21 +98,40 @@ class SqliteTaskStore:
             )
             self._db.commit()
 
-    def get_task(self, task_id: str) -> Task | None:
+    def get_task(
+        self, task_id: str, *, owner_id: str | None = None
+    ) -> Task | None:
         with self._db.lock():
-            row = self._db.execute(
-                "SELECT * FROM tasks WHERE id = ?", (task_id,)
-            ).fetchone()
+            if owner_id is not None:
+                row = self._db.execute(
+                    "SELECT * FROM tasks WHERE id = ? AND owner_id = ?",
+                    (task_id, owner_id),
+                ).fetchone()
+            else:
+                row = self._db.execute(
+                    "SELECT * FROM tasks WHERE id = ?", (task_id,)
+                ).fetchone()
         if not row:
             return None
         return self._row_to_task(row)
 
-    def list_tasks(self, limit: int = 50) -> list[Task]:
+    def list_tasks(
+        self, limit: int = 50, *, owner_id: str | None = None
+    ) -> list[Task]:
         with self._db.lock():
-            rows = self._db.execute(
-                "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            if owner_id is not None:
+                rows = self._db.execute(
+                    """
+                    SELECT * FROM tasks WHERE owner_id = ?
+                    ORDER BY created_at DESC LIMIT ?
+                    """,
+                    (owner_id, limit),
+                ).fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
         return [self._row_to_task(r) for r in rows]
 
     def audit(
@@ -143,6 +171,7 @@ class SqliteTaskStore:
             goal=row["goal"],
             status=TaskStatus(row["status"]),
             agent=row["agent"],
+            owner_id=row.get("owner_id") or "local",
             plan=json.loads(row["plan"] or "[]"),
             steps=json.loads(row["steps"] or "[]"),
             result=row["result"],

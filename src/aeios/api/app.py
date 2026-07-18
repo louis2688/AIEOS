@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from aeios.api.auth import ClerkAuthMiddleware, ClerkJWTVerifier, resolve_owner_id
@@ -19,6 +22,8 @@ from aeios.observability.request_id import RequestIdMiddleware
 from aeios.persistence.pipelines import PipelineStep, PipelineStore
 from aeios.persistence.projects import ProjectStore
 
+_TASK_TERMINAL = frozenset({"completed", "failed", "cancelled"})
+
 
 class TaskCreate(BaseModel):
     goal: str = Field(..., min_length=1)
@@ -30,6 +35,7 @@ class TaskOut(BaseModel):
     goal: str
     status: str
     agent: str | None
+    owner_id: str = "local"
     plan: list[str]
     steps: list[dict[str, Any]]
     result: str | None
@@ -133,8 +139,13 @@ class ModelOut(BaseModel):
     api_key_masked: str | None
     is_default: bool
     enabled: bool
+    owner_id: str = "local"
     created_at: str
     updated_at: str
+
+
+def _task_out(task: Any) -> TaskOut:
+    return TaskOut(**task.model_dump(mode="json"))
 
 
 def _pipeline_out(p: Any) -> PipelineOut:
@@ -223,30 +234,83 @@ def create_app(
         return {"tools": kernel.syscalls.list_tools()}
 
     @app.post("/v1/tasks", response_model=TaskOut)
-    def create_task(body: TaskCreate, wait: bool = True) -> TaskOut:
+    def create_task(
+        request: Request, body: TaskCreate, wait: bool = True
+    ) -> TaskOut:
         """Create a task. wait=true (default) blocks until done; wait=false returns immediately."""
-        task = kernel.syscalls.execute_task(body.goal, agent=body.agent, wait=wait)
-        return TaskOut(**task.model_dump(mode="json"))
+        owner = resolve_owner_id(request)
+        task = kernel.syscalls.execute_task(
+            body.goal, agent=body.agent, wait=wait, owner_id=owner
+        )
+        return _task_out(task)
 
     @app.get("/v1/tasks", response_model=list[TaskOut])
-    def list_tasks(limit: int = 50) -> list[TaskOut]:
-        tasks = kernel.syscalls.list_tasks(limit=limit)
-        return [TaskOut(**t.model_dump(mode="json")) for t in tasks]
+    def list_tasks(request: Request, limit: int = 50) -> list[TaskOut]:
+        owner = resolve_owner_id(request)
+        tasks = kernel.syscalls.list_tasks(limit=limit, owner_id=owner)
+        return [_task_out(t) for t in tasks]
 
     @app.get("/v1/tasks/{task_id}", response_model=TaskOut)
-    def get_task(task_id: str) -> TaskOut:
-        task = kernel.syscalls.get_task(task_id)
+    def get_task(request: Request, task_id: str) -> TaskOut:
+        owner = resolve_owner_id(request)
+        task = kernel.syscalls.get_task(task_id, owner_id=owner)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
-        return TaskOut(**task.model_dump(mode="json"))
+        return _task_out(task)
+
+    @app.post("/v1/tasks/{task_id}/cancel", response_model=TaskOut)
+    def cancel_task(request: Request, task_id: str) -> TaskOut:
+        owner = resolve_owner_id(request)
+        task = kernel.syscalls.cancel_task(task_id, owner_id=owner)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return _task_out(task)
+
+    @app.get("/v1/tasks/{task_id}/events")
+    def task_events(request: Request, task_id: str) -> StreamingResponse:
+        """SSE stream of task snapshots until terminal status."""
+        owner = resolve_owner_id(request)
+        task = kernel.syscalls.get_task(task_id, owner_id=owner)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        def event_stream():
+            last: str | None = None
+            for _ in range(300):
+                current = kernel.syscalls.get_task(task_id, owner_id=owner)
+                if not current:
+                    yield f"event: error\ndata: {json.dumps({'detail': 'Task not found'})}\n\n"
+                    break
+                payload = _task_out(current).model_dump()
+                blob = json.dumps(payload)
+                if blob != last:
+                    yield f"data: {blob}\n\n"
+                    last = blob
+                if current.status.value in _TASK_TERMINAL:
+                    break
+                time.sleep(1.0)
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.get("/v1/tasks/{task_id}/artifacts")
-    def get_task_artifacts(task_id: str) -> dict[str, Any]:
-        """Files written during a task (paths from steps; content if still on disk)."""
-        task = kernel.syscalls.get_task(task_id)
+    def get_task_artifacts(request: Request, task_id: str) -> dict[str, Any]:
+        """Files written during a task (durable DB + disk when present)."""
+        owner = resolve_owner_id(request)
+        task = kernel.syscalls.get_task(task_id, owner_id=owner)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
-        artifacts = collect_task_artifacts(task, kernel.workspace)
+        durable = kernel.artifacts.list_for_task(task_id, owner_id=owner)
+        artifacts = collect_task_artifacts(
+            task, kernel.workspace, durable=durable
+        )
         return {
             "task_id": task_id,
             "workspace": str(kernel.workspace),
@@ -399,11 +463,16 @@ def create_app(
         )
 
     @app.get("/v1/models", response_model=list[ModelOut])
-    def list_models(limit: int = 100) -> list[ModelOut]:
-        return [ModelOut(**m.public_dict()) for m in models.list(limit=limit)]
+    def list_models(request: Request, limit: int = 100) -> list[ModelOut]:
+        owner = resolve_owner_id(request)
+        return [
+            ModelOut(**m.public_dict())
+            for m in models.list(limit=limit, owner_id=owner)
+        ]
 
     @app.post("/v1/models", response_model=ModelOut)
-    def create_model(body: ModelCreate) -> ModelOut:
+    def create_model(request: Request, body: ModelCreate) -> ModelOut:
+        owner = resolve_owner_id(request)
         try:
             record = models.create(
                 name=body.name,
@@ -413,20 +482,25 @@ def create_app(
                 api_key=body.api_key,
                 is_default=body.is_default,
                 enabled=body.enabled,
+                owner_id=owner,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return ModelOut(**record.public_dict())
 
     @app.get("/v1/models/{model_pk}", response_model=ModelOut)
-    def get_model(model_pk: str) -> ModelOut:
-        record = models.get(model_pk)
+    def get_model(request: Request, model_pk: str) -> ModelOut:
+        owner = resolve_owner_id(request)
+        record = models.get(model_pk, owner_id=owner)
         if not record:
             raise HTTPException(status_code=404, detail="Model not found")
         return ModelOut(**record.public_dict())
 
     @app.patch("/v1/models/{model_pk}", response_model=ModelOut)
-    def update_model(model_pk: str, body: ModelUpdate) -> ModelOut:
+    def update_model(
+        request: Request, model_pk: str, body: ModelUpdate
+    ) -> ModelOut:
+        owner = resolve_owner_id(request)
         record = models.update(
             model_pk,
             name=body.name,
@@ -434,27 +508,31 @@ def create_app(
             base_url=body.base_url,
             api_key=body.api_key,
             enabled=body.enabled,
+            owner_id=owner,
         )
         if not record:
             raise HTTPException(status_code=404, detail="Model not found")
         return ModelOut(**record.public_dict())
 
     @app.post("/v1/models/{model_pk}/default", response_model=ModelOut)
-    def set_default_model(model_pk: str) -> ModelOut:
-        record = models.set_default(model_pk)
+    def set_default_model(request: Request, model_pk: str) -> ModelOut:
+        owner = resolve_owner_id(request)
+        record = models.set_default(model_pk, owner_id=owner)
         if not record:
             raise HTTPException(status_code=404, detail="Model not found")
         return ModelOut(**record.public_dict())
 
     @app.delete("/v1/models/{model_pk}")
-    def delete_model(model_pk: str) -> dict[str, bool]:
-        if not models.delete(model_pk):
+    def delete_model(request: Request, model_pk: str) -> dict[str, bool]:
+        owner = resolve_owner_id(request)
+        if not models.delete(model_pk, owner_id=owner):
             raise HTTPException(status_code=404, detail="Model not found")
         return {"ok": True}
 
     @app.post("/v1/models/{model_pk}/test")
-    def test_model(model_pk: str) -> dict[str, Any]:
-        record = models.get(model_pk)
+    def test_model(request: Request, model_pk: str) -> dict[str, Any]:
+        owner = resolve_owner_id(request)
+        record = models.get(model_pk, owner_id=owner)
         if not record:
             raise HTTPException(status_code=404, detail="Model not found")
         try:

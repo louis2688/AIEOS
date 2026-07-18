@@ -6,21 +6,50 @@ from typing import Any
 from aeios.core.types import Task
 
 
-def collect_task_artifacts(task: Task, workspace: Path) -> list[dict[str, Any]]:
-    """Collect files written/updated during a task (from steps + workspace)."""
+def collect_task_artifacts(
+    task: Task,
+    workspace: Path,
+    *,
+    durable: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Collect files written/updated during a task (disk + durable DB rows)."""
     root = workspace.resolve()
     seen: dict[str, dict[str, Any]] = {}
+
+    for row in durable or []:
+        path = str(row.get("path") or "").replace("\\", "/").lstrip("./")
+        if not path:
+            continue
+        seen[path] = {
+            "path": path,
+            "exists": True,
+            "bytes": int(row.get("bytes") or 0),
+            "content": row.get("content"),
+            "source": row.get("source") or "db",
+            "ephemeral_note": None,
+            "id": row.get("id"),
+        }
 
     for step in task.steps or []:
         if not isinstance(step, dict):
             continue
         paths = _paths_from_step(step)
         for rel in paths:
-            if rel in seen:
+            disk = _read_artifact(root, rel, source="step")
+            if not disk:
                 continue
-            entry = _read_artifact(root, rel, source="step")
-            if entry:
-                seen[rel] = entry
+            existing = seen.get(rel)
+            if existing and existing.get("source") == "db":
+                # Prefer live disk content when present; keep DB as fallback.
+                if disk.get("exists"):
+                    seen[rel] = {
+                        **disk,
+                        "id": existing.get("id"),
+                        "source": "step+db",
+                    }
+                continue
+            if rel not in seen:
+                seen[rel] = disk
 
     return sorted(seen.values(), key=lambda a: a["path"])
 
@@ -44,7 +73,9 @@ def _paths_from_step(step: dict[str, Any]) -> list[str]:
     elif isinstance(output, str):
         # Heuristic: "Wrote IMPLEMENTATION.md" style messages
         for token in output.replace("`", " ").split():
-            if "/" in token or token.endswith((".md", ".py", ".txt", ".json", ".yml", ".yaml")):
+            if "/" in token or token.endswith(
+                (".md", ".py", ".txt", ".json", ".yml", ".yaml")
+            ):
                 cleaned = token.strip(".,;:()[]\"'").replace("\\", "/").lstrip("./")
                 if cleaned and ".." not in cleaned:
                     paths.append(cleaned)

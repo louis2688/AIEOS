@@ -214,6 +214,10 @@ export function getTaskArtifacts(id: string) {
   }>(`/v1/tasks/${id}/artifacts`);
 }
 
+export function cancelTask(id: string) {
+  return request<Task>(`/v1/tasks/${id}/cancel`, { method: "POST" });
+}
+
 export function listProjects(limit = 30) {
   return request<Project[]>(`/v1/projects?limit=${limit}`);
 }

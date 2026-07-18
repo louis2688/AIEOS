@@ -23,9 +23,15 @@ class Planner:
         self.model_store = model_store
         self.client = ModelClient()
 
-    def plan(self, goal: str, agent_role: str = "software_engineer") -> list[str]:
+    def plan(
+        self,
+        goal: str,
+        agent_role: str = "software_engineer",
+        *,
+        owner_id: str | None = None,
+    ) -> list[str]:
         deterministic = self.deterministic_plan(goal, agent_role)
-        model = self._resolve_model()
+        model = self._resolve_model(owner_id=owner_id)
         if not model:
             return deterministic
         try:
@@ -125,9 +131,9 @@ class Planner:
         ]
         return reflection, revised
 
-    def _resolve_model(self) -> ModelRecord | None:
+    def _resolve_model(self, *, owner_id: str | None = None) -> ModelRecord | None:
         if self.model_store:
-            model = self.model_store.get_default()
+            model = self.model_store.get_default(owner_id=owner_id)
             if model and model.enabled:
                 return model
         # Legacy fallback: env OpenAI key without library entry
