@@ -6,6 +6,8 @@ kernel:
   default_agent: software_engineer
   # Retries after first tool failure before the step is considered failed
   max_tool_retries: 2
+  # LLM observe→act loop budget per task (library model path)
+  max_act_steps: 8
 
 memory:
   # local = JSON memory + lexical search; set backend: qdrant to prefer vectors
