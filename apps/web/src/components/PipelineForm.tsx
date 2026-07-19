@@ -1,6 +1,15 @@
 "use client";
 
-import { memo, useCallback, useEffect, useId, useRef, useState, useTransition } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import { createPipelineAction } from "@/app/actions";
 import type { PipelineStep, Project } from "@/lib/types";
@@ -108,10 +117,8 @@ export function PipelineForm({
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
-  const stepsRef = useRef<StepDraft[]>([]);
-  const nextId = useRef(2);
   const starterApplied = useRef(false);
-  const [steps, setSteps] = useState<StepDraft[]>(() => {
+  const boot = useMemo(() => {
     const initial = makeSteps(idPrefix, [
       {
         agent: "architect",
@@ -122,11 +129,11 @@ export function PipelineForm({
         goal: "Implement based on plan: {previous}",
       },
     ]);
-    nextId.current = initial.length;
-    // Ref is source of truth for field edits; state only tracks structure (add/remove).
-    stepsRef.current = initial;
-    return initial;
-  });
+    return { initial, next: initial.length };
+  }, [idPrefix]);
+  const [steps, setSteps] = useState<StepDraft[]>(boot.initial);
+  const stepsRef = useRef<StepDraft[]>(boot.initial);
+  const nextId = useRef(boot.next);
 
   const agentOptions = [
     ...agents,

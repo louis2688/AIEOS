@@ -127,11 +127,10 @@ class ArchitectAgent(BaseAgent):
     role = "architect"
 
     def execute(self, task: Task) -> Task:
-        task.status = TaskStatus.RUNNING
-        # Plan
-        task.plan = self.plan(task.goal, owner_id=task.owner_id)
-        task.touch()
+        return self.run_with_optional_llm(task, self._heuristic_execute)
 
+    def _heuristic_execute(self, task: Task) -> Task:
+        """Deterministic architecture path when no library model is available."""
         observations: list[str] = []
         modules = ["kernel", "memory", "agents", "tools", "api", "web"]
         listing_names: list[str] | None = None

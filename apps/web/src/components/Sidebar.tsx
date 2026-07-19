@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { UserMenu } from "@/components/UserMenu";
 
@@ -17,18 +17,21 @@ const links = [
   { href: "/models", label: "Models", icon: IconChip },
 ] as const;
 
+function readCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(STORAGE_KEY) === "1";
+}
+
 export function Sidebar({ pathname }: { pathname: string }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [seenPath, setSeenPath] = useState(pathname);
 
-  useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === "1") setCollapsed(true);
-  }, []);
-
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
+  // Close the mobile drawer when the route changes (adjust state during render).
+  if (seenPath !== pathname) {
+    setSeenPath(pathname);
+    if (mobileOpen) setMobileOpen(false);
+  }
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
