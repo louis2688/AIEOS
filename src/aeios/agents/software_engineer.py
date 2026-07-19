@@ -89,11 +89,10 @@ class SoftwareEngineerAgent(BaseAgent):
     role = "software_engineer"
 
     def execute(self, task: Task) -> Task:
-        task.status = TaskStatus.RUNNING
-        # Plan
-        task.plan = self.plan(task.goal, owner_id=task.owner_id)
-        task.touch()
+        return self.run_with_optional_llm(task, self._heuristic_execute)
 
+    def _heuristic_execute(self, task: Task) -> Task:
+        """Deterministic plan→act→observe path when no library model is available."""
         observations: list[str] = []
         goal_l = task.goal.lower()
 

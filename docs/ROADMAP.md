@@ -40,6 +40,7 @@
 - [x] Staging deploy path (Docker + Render Blueprint + Vercel) — see [`DEPLOY.md`](DEPLOY.md)
 - [x] Ops hardening docs (Render free Postgres expiry, cold starts, healthcheck, monitors)
 - [x] CI (GitHub Actions)
+- [x] Optional LLM observe→act→reflect loop for SoftwareEngineer / Architect (library model; heuristic fallback)
 
 ## Phase 4 — Scale
 
@@ -64,3 +65,4 @@
 | 2026-07-18 | Knowledge: optional Qdrant vector index (`aeios[vector]`); lexical fallback |
 | 2026-07-19 | Staging on Render free tier: upgrade Postgres before ~30-day expiry; expect web cold starts |
 | 2026-07-19 | Pipeline control + tenant hardening in progress; task cancel/SSE and per-user task/model isolation shipped |
+| 2026-07-19 | Agents: optional LLM act loop via model library JSON tool protocol; heuristics when no library model |
