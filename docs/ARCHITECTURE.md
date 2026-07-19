@@ -51,6 +51,10 @@
 
 - `BaseAgent`: receive → think → act → observe
 - Specialists register with the kernel by role
+- Optional **LLM act loop** (`aeios.agents.act_loop`): when the task owner has a
+  library default model, SoftwareEngineer / Architect drive tools via a JSON
+  protocol (`tool` / `done` / `fail`). Otherwise the deterministic heuristic
+  path runs (no network).
 
 ### Tools (`aeios.tools`)
 
