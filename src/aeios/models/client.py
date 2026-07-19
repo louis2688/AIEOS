@@ -43,14 +43,40 @@ class ModelClient:
         temperature: float = 0.2,
         timeout: float = 30.0,
     ) -> str:
+        return self.complete_messages(
+            model,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+            temperature=temperature,
+            timeout=timeout,
+        )
+
+    def complete_messages(
+        self,
+        model: ModelRecord,
+        *,
+        system: str,
+        messages: list[dict[str, str]],
+        temperature: float = 0.2,
+        timeout: float = 30.0,
+    ) -> str:
+        """Multi-turn chat completion (system + alternating user/assistant messages)."""
         try:
             if model.provider in {"openai", "ollama"}:
                 text, prompt, completion, total = self._openai_compatible(
-                    model, system=system, user=user, temperature=temperature, timeout=timeout
+                    model,
+                    system=system,
+                    messages=messages,
+                    temperature=temperature,
+                    timeout=timeout,
                 )
             elif model.provider == "anthropic":
                 text, prompt, completion, total = self._anthropic(
-                    model, system=system, user=user, temperature=temperature, timeout=timeout
+                    model,
+                    system=system,
+                    messages=messages,
+                    temperature=temperature,
+                    timeout=timeout,
                 )
             else:
                 raise ValueError(f"Unsupported provider: {model.provider}")
@@ -75,7 +101,7 @@ class ModelClient:
         model: ModelRecord,
         *,
         system: str,
-        user: str,
+        messages: list[dict[str, str]],
         temperature: float,
         timeout: float,
     ) -> tuple[str, int, int, int]:
@@ -85,13 +111,16 @@ class ModelClient:
         api_key = self._resolved_key(model)
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
+        chat_messages: list[dict[str, str]] = [{"role": "system", "content": system}]
+        for msg in messages:
+            role = msg.get("role") or "user"
+            if role not in {"user", "assistant", "system"}:
+                role = "user"
+            chat_messages.append({"role": role, "content": str(msg.get("content") or "")})
         payload: dict[str, Any] = {
             "model": model.model_id,
             "temperature": temperature,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            "messages": chat_messages,
         }
         with httpx.Client(timeout=timeout) as client:
             resp = client.post(url, headers=headers, json=payload)
@@ -106,7 +135,7 @@ class ModelClient:
         model: ModelRecord,
         *,
         system: str,
-        user: str,
+        messages: list[dict[str, str]],
         temperature: float,
         timeout: float,
     ) -> tuple[str, int, int, int]:
@@ -123,12 +152,20 @@ class ModelClient:
             "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
         }
+        anth_messages: list[dict[str, str]] = []
+        for msg in messages:
+            role = msg.get("role") or "user"
+            if role not in {"user", "assistant"}:
+                role = "user"
+            anth_messages.append({"role": role, "content": str(msg.get("content") or "")})
+        if not anth_messages:
+            anth_messages = [{"role": "user", "content": ""}]
         payload: dict[str, Any] = {
             "model": model.model_id,
             "max_tokens": 1024,
             "temperature": temperature,
             "system": system,
-            "messages": [{"role": "user", "content": user}],
+            "messages": anth_messages,
         }
         with httpx.Client(timeout=timeout) as client:
             resp = client.post(url, headers=headers, json=payload)

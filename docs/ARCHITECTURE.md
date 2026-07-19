@@ -53,8 +53,10 @@
 - Specialists register with the kernel by role
 - Optional **LLM act loop** (`aeios.agents.act_loop`): when the task owner has a
   library default model, SoftwareEngineer / Architect drive tools via a JSON
-  protocol (`tool` / `done` / `fail`). Otherwise the deterministic heuristic
-  path runs (no network).
+  protocol (`tool` / `done` / `fail`) with tool schemas, multi-turn
+  `ModelClient.complete_messages`, step budget (`kernel.max_act_steps`), and
+  validation/retry limits. Otherwise the deterministic heuristic path runs
+  (no network).
 
 ### Tools (`aeios.tools`)
 

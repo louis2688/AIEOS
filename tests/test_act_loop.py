@@ -43,9 +43,28 @@ class _ScriptedClient(ModelClient):
         super().__init__()
         self._replies = list(replies)
         self.calls = 0
+        self.last_messages: list[dict[str, str]] | None = None
 
     def complete(self, model, *, system: str, user: str, temperature=0.2, timeout=30.0) -> str:
+        return self.complete_messages(
+            model,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+            temperature=temperature,
+            timeout=timeout,
+        )
+
+    def complete_messages(
+        self,
+        model,
+        *,
+        system: str,
+        messages: list[dict[str, str]],
+        temperature: float = 0.2,
+        timeout: float = 30.0,
+    ) -> str:
         self.calls += 1
+        self.last_messages = list(messages)
         if not self._replies:
             return '{"action":"done","result":"fallback done"}'
         return self._replies.pop(0)
@@ -138,6 +157,64 @@ def test_architect_llm_act_loop(tmp_path: Path, monkeypatch) -> None:
     assert finished.status == TaskStatus.COMPLETED
     assert any(s.get("step") == "llm_act_start" for s in finished.steps)
     assert (tmp_path / "ARCHITECTURE.md").is_file()
+
+
+def test_llm_act_rejects_unknown_tool(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    _write_config(tmp_path)
+    kernel = Kernel(workspace=tmp_path)
+    kernel.models.create(
+        name="Test",
+        provider="openai",
+        model_id="gpt-test",
+        owner_id="local",
+        is_default=True,
+    )
+    client = _ScriptedClient(
+        [
+            '{"action":"tool","tool":"not_a_real_tool","args":{}}',
+            '{"action":"tool","tool":"not_a_real_tool","args":{}}',
+            '{"action":"tool","tool":"not_a_real_tool","args":{}}',
+        ]
+    )
+    agent = kernel.agents["software_engineer"]
+    task = Task(goal="x", agent="software_engineer", owner_id="local")
+    task.status = TaskStatus.RUNNING
+    task.plan = ["x"]
+    used = try_llm_act(agent, task, client=client, max_steps=5)
+    assert used is True
+    assert task.status == TaskStatus.FAILED
+    assert any(s.get("step") == "llm_tool_validate" for s in task.steps)
+
+
+def test_llm_act_keeps_multi_turn_messages(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    _write_config(tmp_path)
+    kernel = Kernel(workspace=tmp_path)
+    kernel.models.create(
+        name="Test",
+        provider="openai",
+        model_id="gpt-test",
+        owner_id="local",
+        is_default=True,
+    )
+    client = _ScriptedClient(
+        [
+            '{"action":"tool","tool":"echo","args":{"message":"hi"}}',
+            '{"action":"done","result":"ok"}',
+        ]
+    )
+    agent = kernel.agents["software_engineer"]
+    task = Task(goal="say hi", agent="software_engineer", owner_id="local")
+    task.status = TaskStatus.RUNNING
+    task.plan = ["echo"]
+    try_llm_act(agent, task, client=client, max_steps=5)
+    assert client.calls == 2
+    assert client.last_messages is not None
+    assert len(client.last_messages) >= 2
+    assert any(m.get("role") == "assistant" for m in client.last_messages)
 
 
 def test_llm_act_respects_cancel(tmp_path: Path, monkeypatch) -> None:
