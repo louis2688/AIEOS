@@ -30,7 +30,9 @@ LLM-backed planning is **optional** until keys exist; Phase 0 uses a determinist
 
 - Kubernetes
 - GraphQL (start with REST/JSON)
-- gRPC service mesh
-- Plugin marketplace
-- Rust rewrites
+- gRPC service mesh (still deferred in Phase 4)
+- Plugin marketplace (still deferred in Phase 4)
+- Rust rewrites (still deferred in Phase 4)
+- S3/MinIO object storage (artifacts stay in SQL)
+- RBAC / Tester agent / OpenTelemetry (optional later — see roadmap)
 - Full self-healing production loops

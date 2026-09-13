@@ -48,14 +48,21 @@ class Syscalls:
             return None
         return self._kernel.request_cancel(task_id)
 
-    def request_memory(self, action: str, key: str, value: Any = None) -> Any:
+    def request_memory(
+        self,
+        action: str,
+        key: str,
+        value: Any = None,
+        *,
+        owner_id: str = "local",
+    ) -> Any:
         if action == "get":
-            return self._kernel.memory.get(key)
+            return self._kernel.memory.get(key, owner_id=owner_id)
         if action == "set":
-            self._kernel.memory.set(key, value)
+            self._kernel.memory.set(key, value, owner_id=owner_id)
             return True
         if action == "list":
-            return self._kernel.memory.keys()
+            return self._kernel.memory.keys(owner_id=owner_id)
         raise ValueError(f"Unknown memory action: {action}")
 
     def call_tool(self, name: str, **kwargs: Any) -> ToolResult:

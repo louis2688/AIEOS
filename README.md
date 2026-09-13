@@ -31,7 +31,7 @@ Auth setup: [docs/AUTH.md](docs/AUTH.md)
 
 Staging deploy (API Docker + web on Vercel, auth required): [docs/DEPLOY.md](docs/DEPLOY.md) — including [Render ops](docs/DEPLOY.md#ops-hardening-render) (free Postgres expiry, cold starts, healthcheck).
 
-Optional local infra (Postgres, Qdrant, MinIO):
+Optional local infra (Postgres, Qdrant):
 
 ```bash
 docker compose up -d
@@ -55,7 +55,7 @@ AIEOS/
 ├── docs/               # Vision, architecture, roadmap
 ├── tests/
 ├── Dockerfile                 # Staging API image (auth required)
-├── docker-compose.yml         # Optional local Postgres/Qdrant/MinIO
+├── docker-compose.yml         # Optional local Postgres/Qdrant
 └── docker-compose.staging.yml # Staging API (Clerk JWT required)
 ```
 
@@ -76,7 +76,8 @@ AIEOS/
 | 0 | Foundation + hello path | Done |
 | 1 | Kernel MVP (SQLite, shell, API, doctor) | Done |
 | 2 | Product surface (dashboard + auth + models) | Done |
-| 3 | Hardening (security, MCP, observability) | Later |
+| 3 | Hardening (security, MCP, observability) | Done |
+| 4 | Scale (tenant isolation; marketplace/gRPC deferred) | In progress |
 
 ## License
 
