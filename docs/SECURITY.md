@@ -1,6 +1,6 @@
 # AEIOS Threat Model (local-first)
 
-Short security model for the Phase 3 hardening baseline (sandbox + secrets hygiene shipped; RBAC deferred), plus Phase 4 per-user row isolation for projects/pipelines/tasks/models. AEIOS remains primarily a local control plane; multi-tenant isolation applies when the FastAPI layer is shared behind Clerk.
+Short security model for the Phase 3 hardening baseline (sandbox + secrets hygiene shipped; RBAC deferred), plus Phase 4 per-user isolation for projects/pipelines/tasks/models/artifacts, memory, and knowledge vectors. AEIOS remains primarily a local control plane; multi-tenant isolation applies when the FastAPI layer is shared behind Clerk.
 
 ## Trust boundaries
 
@@ -68,13 +68,15 @@ Clerk JWT validation lives in FastAPI (`aeios.api.auth`). Do not duplicate auth 
 
 ## Multi-tenant row isolation (Phase 4)
 
-When the API is shared across Clerk users, **projects**, **pipelines**, **tasks**, and **models** rows carry `owner_id` (= JWT `sub`). List/get/delete/cancel and pipeline-run access are filtered by that owner so users cannot read or mutate each other's data. Memory and knowledge vectors are only partially isolated. With `AEIOS_AUTH_DISABLED` (or no Clerk config), every request uses the fixed owner `"local"` so local pytest/CLI stay single-tenant. Details: [`AUTH.md`](AUTH.md#per-user-data-isolation-phase-4).
+When the API is shared across Clerk users, **projects**, **pipelines**, **tasks**, **models**, and **artifacts** rows carry `owner_id` (= JWT `sub`). List/get/delete/cancel and pipeline-run access are filtered by that owner so users cannot read or mutate each other's data. **Memory** bags and **Qdrant** knowledge vectors are likewise owner-scoped (payload + search filter). With `AEIOS_AUTH_DISABLED` (or no Clerk config), every request uses the fixed owner `"local"` so local pytest/CLI stay single-tenant. Details: [`AUTH.md`](AUTH.md#per-user-data-isolation-phase-4).
+
+RBAC (roles beyond JWT presence + owner filter), a Tester agent, and OpenTelemetry remain deferred — see [`ROADMAP.md`](ROADMAP.md#later-optional-product-depth).
 
 ## Observability (MVP)
 
 - Correlation: every response includes `X-Request-ID` (client-supplied or server-generated).
 - Metrics: process counters at `GET /v1/metrics` (LLM tokens/calls, tool/task counts). Protected by the same Clerk JWT middleware as other `/v1/*` routes; `/health` stays public.
-- Cost figures are rough placeholders, not provider invoices. Full OpenTelemetry is out of scope for this MVP.
+- Cost figures are rough placeholders, not provider invoices. Full OpenTelemetry is deferred (see roadmap).
 
 ## Residual risks
 

@@ -447,6 +447,7 @@ class Kernel:
             self._persist(finished, event=f"task_{finished.status.value}")
 
         self._cancel_requested.discard(finished.id)
+        owner = finished.owner_id or "local"
         self.memory.append_history(
             {
                 "id": finished.id,
@@ -455,9 +456,10 @@ class Kernel:
                 "status": finished.status.value,
                 "result": finished.result,
                 "error": finished.error,
-            }
+            },
+            owner_id=owner,
         )
-        self.memory.set("last_task_id", finished.id)
+        self.memory.set("last_task_id", finished.id, owner_id=owner)
         self._record_task_finished(ok=finished.status == TaskStatus.COMPLETED)
 
     def status(self) -> dict[str, Any]:
@@ -471,9 +473,9 @@ class Kernel:
                 "pending": self.scheduler.pending,
                 "active": self.scheduler.active,
             },
-            "memory_keys": self.memory.keys(),
+            "memory_keys": self.memory.keys(owner_id="local"),
             "tasks_tracked": len(self.list_tasks(limit=1000)),
-            "last_task_id": self.memory.get("last_task_id"),
+            "last_task_id": self.memory.get("last_task_id", owner_id="local"),
             "db_path": self.db.display,
             "db_backend": self.db.backend,
             "llm_planner": bool(self.models.get_default() or self.settings.openai_api_key),

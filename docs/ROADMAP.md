@@ -6,7 +6,7 @@
 - [x] Python package + CLI entrypoint
 - [x] Kernel / memory / agents / tools skeleton
 - [x] `aeios run "hello"` smoke path
-- [x] docker-compose for Postgres / Qdrant / MinIO
+- [x] docker-compose for Postgres / Qdrant (MinIO deferred — artifacts in DB)
 - [x] Initial git commit + GitHub repo
 
 ## Phase 1 — Kernel MVP
@@ -44,10 +44,19 @@
 
 ## Phase 4 — Scale
 
-- [ ] Multi-tenant isolation — row isolation for projects/pipelines/tasks/models done; memory/vectors partial
-- [ ] gRPC between kernel services (if needed)
-- [ ] Plugin / driver marketplace
-- [ ] Optional Rust for hot paths (only after Python proves the model)
+- [x] Multi-tenant isolation — projects/pipelines/tasks/models/artifacts + owner-scoped memory and Qdrant vectors
+- [ ] gRPC between kernel services — **deferred** (only if multi-process kernel split is needed)
+- [ ] Plugin / driver marketplace — **deferred** (dogfood kernel/tools first)
+- [ ] Optional Rust for hot paths — **deferred** (only after Python proves the model)
+- [ ] Object storage (S3/MinIO) — **deferred** (artifacts stay in SQLite/Postgres)
+
+## Later (optional product depth)
+
+Not Phase 4 blockers — pick up only if multi-tenant SaaS depth requires them:
+
+- [ ] RBAC (roles beyond JWT presence + owner filter)
+- [ ] Tester agent (architected; not implemented)
+- [ ] OpenTelemetry (MVP keeps request IDs + `/v1/metrics` placeholders)
 
 ## Decision log
 
@@ -66,3 +75,4 @@
 | 2026-07-19 | Staging on Render free tier: upgrade Postgres before ~30-day expiry; expect web cold starts |
 | 2026-07-19 | Pipeline control + tenant hardening in progress; task cancel/SSE and per-user task/model isolation shipped |
 | 2026-07-19 | Agents: optional LLM act loop via model library JSON tool protocol; heuristics when no library model |
+| 2026-08-01 | Memory + Qdrant vectors owner-scoped; MinIO dropped from Compose (artifacts in DB); marketplace/gRPC/Rust/RBAC/Tester/OTel deferred |

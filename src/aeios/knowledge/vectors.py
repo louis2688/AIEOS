@@ -3,6 +3,9 @@
 Uses a deterministic local hash embedder (no external embedding API).
 Soft-fails when qdrant-client is missing or Qdrant is unreachable —
 callers should keep lexical search as the primary path.
+
+Points are namespaced by ``owner_id`` (payload + point id) so tenants
+cannot overwrite or retrieve each other's vectors.
 """
 
 from __future__ import annotations
@@ -41,6 +44,7 @@ class VectorHit:
     score: float
     href: str | None = None
     meta: dict[str, Any] | None = None
+    owner_id: str | None = None
 
 
 class QdrantKnowledgeIndex:
@@ -91,6 +95,7 @@ class QdrantKnowledgeIndex:
                         distance=qm.Distance.COSINE,
                     ),
                 )
+            self._ensure_owner_index(client, qm)
             self._client = client
             self._last_error = None
             return True
@@ -98,6 +103,17 @@ class QdrantKnowledgeIndex:
             self._last_error = f"{exc.__class__.__name__}: {exc}"
             self._client = None
             return False
+
+    def _ensure_owner_index(self, client: Any, qm: Any) -> None:
+        """Best-effort keyword index so owner_id filters stay efficient."""
+        try:
+            client.create_payload_index(
+                collection_name=self.collection,
+                field_name="owner_id",
+                field_schema=qm.PayloadSchemaType.KEYWORD,
+            )
+        except Exception:  # noqa: BLE001 — already exists or unsupported
+            pass
 
     def upsert_document(
         self,
@@ -108,12 +124,14 @@ class QdrantKnowledgeIndex:
         text: str,
         href: str | None = None,
         meta: dict[str, Any] | None = None,
+        owner_id: str = "local",
     ) -> bool:
         if not self.available or self._client is None:
             return False
         try:
             from qdrant_client.http import models as qm
 
+            oid = owner_id or "local"
             payload = {
                 "kind": kind,
                 "id": point_id,
@@ -121,9 +139,9 @@ class QdrantKnowledgeIndex:
                 "text": text[:4000],
                 "href": href,
                 "meta": meta or {},
+                "owner_id": oid,
             }
-            # Stable UUID-ish id from kind+id
-            uid = _point_uuid(f"{kind}:{point_id}")
+            uid = _point_uuid(f"{oid}:{kind}:{point_id}")
             self._client.upsert(
                 collection_name=self.collection,
                 points=[
@@ -140,15 +158,34 @@ class QdrantKnowledgeIndex:
             self._available = False
             return False
 
-    def search(self, query: str, *, limit: int = 20) -> list[VectorHit]:
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int = 20,
+        owner_id: str | None = None,
+    ) -> list[VectorHit]:
         if not query.strip() or not self.available or self._client is None:
             return []
         try:
+            from qdrant_client.http import models as qm
+
+            query_filter = None
+            if owner_id is not None:
+                query_filter = qm.Filter(
+                    must=[
+                        qm.FieldCondition(
+                            key="owner_id",
+                            match=qm.MatchValue(value=owner_id),
+                        )
+                    ]
+                )
             results = self._client.search(
                 collection_name=self.collection,
                 query_vector=hash_embed(query, self.dim),
                 limit=limit,
                 with_payload=True,
+                query_filter=query_filter,
             )
             hits: list[VectorHit] = []
             for r in results:
@@ -162,6 +199,7 @@ class QdrantKnowledgeIndex:
                         score=float(r.score or 0.0),
                         href=payload.get("href"),
                         meta=payload.get("meta") or {},
+                        owner_id=payload.get("owner_id"),
                     )
                 )
             return hits

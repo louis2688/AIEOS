@@ -32,7 +32,8 @@ class KnowledgeSearch:
     reachable, memory (and optionally task) vectors are upserted lazily and
     merged into results. Qdrant failures never raise — lexical remains.
 
-    Shared process memory is only searched for local / auth-off owners.
+    Memory and vectors are scoped by ``owner_id`` (Clerk JWT ``sub``, or
+    ``"local"`` for CLI / auth-off).
     """
 
     def __init__(
@@ -262,13 +263,11 @@ class KnowledgeSearch:
     def _search_memory(
         self, query: str, *, owner_id: str | None = None
     ) -> list[KnowledgeHit]:
-        # Shared memory has no owner column — exclude for signed-in tenants.
-        if owner_id is not None and owner_id != "local":
-            return []
+        oid = owner_id or "local"
         hits: list[KnowledgeHit] = []
         memory = self.kernel.memory
-        for key in memory.keys():
-            value = memory.get(key)
+        for key in memory.keys(owner_id=oid):
+            value = memory.get(key, owner_id=oid)
             text = json.dumps(value, default=str) if not isinstance(value, str) else value
             blob = f"{key} {text}"
             score, snippet = _match(query, blob, preferred=text[:240])
@@ -282,7 +281,7 @@ class KnowledgeSearch:
                     snippet=snippet,
                     score=score * 0.9,
                     href=None,
-                    meta={"key": key},
+                    meta={"key": key, "owner_id": oid},
                 )
             )
         return hits
@@ -297,18 +296,19 @@ class KnowledgeSearch:
         idx = self.vector_index
         if idx is None:
             return []
+        oid = owner_id or "local"
         # Lazy upsert of memory + recent tasks (best-effort)
         try:
-            self._sync_vectors(allowed, owner_id=owner_id)
-            raw = idx.search(query, limit=20)
+            self._sync_vectors(allowed, owner_id=oid)
+            raw = idx.search(query, limit=20, owner_id=oid)
         except Exception:  # noqa: BLE001
             return []
         hits: list[KnowledgeHit] = []
         for v in raw:
             if v.kind not in allowed or not v.id:
                 continue
-            # Drop shared-memory vector hits for signed-in tenants.
-            if v.kind == "memory" and owner_id is not None and owner_id != "local":
+            # Defense-in-depth: drop mismatched owner payloads.
+            if v.owner_id is not None and v.owner_id != oid:
                 continue
             hits.append(
                 KnowledgeHit(
@@ -318,7 +318,7 @@ class KnowledgeSearch:
                     snippet=v.snippet,
                     score=min(float(v.score) + 0.05, 1.5),
                     href=v.href,
-                    meta={**(v.meta or {}), "source": "qdrant"},
+                    meta={**(v.meta or {}), "source": "qdrant", "owner_id": oid},
                 )
             )
         return hits
@@ -329,13 +329,11 @@ class KnowledgeSearch:
         idx = self.vector_index
         if idx is None or not idx.available:
             return
-        allow_memory = "memory" in allowed and (
-            owner_id is None or owner_id == "local"
-        )
-        if allow_memory:
+        oid = owner_id or "local"
+        if "memory" in allowed:
             memory = self.kernel.memory
-            for key in memory.keys():
-                value = memory.get(key)
+            for key in memory.keys(owner_id=oid):
+                value = memory.get(key, owner_id=oid)
                 text = (
                     json.dumps(value, default=str)
                     if not isinstance(value, str)
@@ -347,9 +345,10 @@ class KnowledgeSearch:
                     title=f"memory:{key}",
                     text=text,
                     meta={"key": key},
+                    owner_id=oid,
                 )
         if "task" in allowed:
-            for task in self.kernel.store.list_tasks(limit=100, owner_id=owner_id):
+            for task in self.kernel.store.list_tasks(limit=100, owner_id=oid):
                 idx.upsert_document(
                     point_id=task.id,
                     kind="task",
@@ -364,11 +363,12 @@ class KnowledgeSearch:
                     ),
                     href=f"/tasks/{task.id}",
                     meta={"status": task.status.value, "agent": task.agent},
+                    owner_id=oid,
                 )
         if "artifact" in allowed:
             artifacts = getattr(self.kernel, "artifacts", None)
             if artifacts is not None:
-                for art in artifacts.list(limit=100, owner_id=owner_id):
+                for art in artifacts.list(limit=100, owner_id=oid):
                     path = art.get("path") or ""
                     content = art.get("content") or ""
                     idx.upsert_document(
@@ -385,6 +385,7 @@ class KnowledgeSearch:
                             "path": path,
                             "task_id": art.get("task_id"),
                         },
+                        owner_id=oid,
                     )
 
 

@@ -152,6 +152,35 @@ def test_pipelines_and_runs_scoped_by_owner(tmp_path: Path, monkeypatch) -> None
     assert {p.id for p in pipelines.list(owner_id="user-b")} == {pipe_b.id}
 
 
+def test_memory_scoped_by_owner(tmp_path: Path) -> None:
+    from aeios.memory.store import MemoryStore
+
+    store = MemoryStore(data_dir=tmp_path / "data")
+    store.set("secret", "alice-only-token", owner_id="user-a")
+    store.set("secret", "bob-only-token", owner_id="user-b")
+
+    assert store.get("secret", owner_id="user-a") == "alice-only-token"
+    assert store.get("secret", owner_id="user-b") == "bob-only-token"
+    assert store.get("secret", owner_id="user-c") is None
+    assert "secret" in store.keys(owner_id="user-a")
+    assert "secret" not in store.keys(owner_id="user-c")
+    assert store.is_shared() is False
+
+
+def test_memory_migrates_legacy_flat_json(tmp_path: Path) -> None:
+    from aeios.memory.store import MemoryStore
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "memory.json").write_text(
+        '{"legacy_key": "legacy-value", "task_history": []}',
+        encoding="utf-8",
+    )
+    store = MemoryStore(data_dir=data_dir)
+    assert store.get("legacy_key", owner_id="local") == "legacy-value"
+    assert store.get("legacy_key", owner_id="user-a") is None
+
+
 def test_knowledge_search_owner_isolation(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     _write_config(tmp_path)
@@ -161,8 +190,16 @@ def test_knowledge_search_owner_isolation(tmp_path: Path, monkeypatch) -> None:
     projects: ProjectStore = app.state.projects
     knowledge = KnowledgeSearch(kernel, pipelines, projects)
 
-    # Shared memory must not leak across signed-in tenants.
-    kernel.memory.set("shared_secret_key", "unique-memory-token-xyz")
+    # Per-owner memory — Alice's bag must not leak to Bob.
+    kernel.memory.set(
+        "alice_secret_key", "unique-memory-token-xyz", owner_id="user-a"
+    )
+    kernel.memory.set(
+        "bob_secret_key", "bob-memory-widget-zzz", owner_id="user-b"
+    )
+    kernel.memory.set(
+        "local_secret_key", "local-memory-token-abc", owner_id="local"
+    )
 
     pipe_a = pipelines.create(
         name="Alice neon pipe",
@@ -190,23 +227,30 @@ def test_knowledge_search_owner_isolation(tmp_path: Path, monkeypatch) -> None:
     )
 
     hits_a = knowledge.search("neon", owner_id="user-a")
-    kinds_a = {h.kind for h in hits_a}
     ids_a = {h.id for h in hits_a}
     assert pipe_a.id in ids_a or any(h.kind == "pipeline" for h in hits_a)
-    assert "memory" not in kinds_a
     assert all(
         h.meta.get("task_id") != "task-b1" for h in hits_a if h.kind == "artifact"
     )
     assert any(h.kind == "artifact" and "ALICE" in h.title for h in hits_a)
 
+    mem_a = knowledge.search("unique-memory-token-xyz", owner_id="user-a")
+    assert any(h.kind == "memory" for h in mem_a)
+    mem_b_leak = knowledge.search("unique-memory-token-xyz", owner_id="user-b")
+    assert not any(h.kind == "memory" for h in mem_b_leak)
+
     hits_b = knowledge.search("widget", owner_id="user-b")
     assert all(h.kind != "pipeline" or "Alice" not in h.title for h in hits_b)
     assert any(h.kind == "artifact" and "BOB" in h.title for h in hits_b)
-    assert "memory" not in {h.kind for h in hits_b}
+    assert any(h.kind == "memory" for h in hits_b)
 
-    # Local / auth-off may still see shared memory.
-    local_hits = knowledge.search("unique-memory-token-xyz", owner_id="local")
+    # Local / auth-off sees only the local bag.
+    local_hits = knowledge.search("local-memory-token-abc", owner_id="local")
     assert any(h.kind == "memory" for h in local_hits)
+    assert not any(
+        h.kind == "memory"
+        for h in knowledge.search("unique-memory-token-xyz", owner_id="local")
+    )
 
 
 def test_planner_no_env_fallback_for_signed_in_owner(monkeypatch) -> None:
