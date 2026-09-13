@@ -10,6 +10,7 @@ import pytest
 from aeios.knowledge.vectors import (
     VECTOR_DIM,
     QdrantKnowledgeIndex,
+    _point_uuid,
     hash_embed,
     try_open_qdrant,
 )
@@ -57,6 +58,14 @@ def test_qdrant_search_soft_fail_when_unavailable() -> None:
     ) is False
 
 
+def test_point_uuid_namespaced_by_owner() -> None:
+    a = _point_uuid("user-a:task:t1")
+    b = _point_uuid("user-b:task:t1")
+    same = _point_uuid("user-a:task:t1")
+    assert a != b
+    assert a == same
+
+
 def test_qdrant_upsert_and_search_mocked() -> None:
     pytest.importorskip("qdrant_client")
 
@@ -73,8 +82,12 @@ def test_qdrant_upsert_and_search_mocked() -> None:
         kind="memory",
         title="memory:mem1",
         text="neon billing notes",
+        owner_id="user-a",
     )
     client.upsert.assert_called_once()
+    point = client.upsert.call_args.kwargs["points"][0]
+    assert point.payload["owner_id"] == "user-a"
+    assert point.id == _point_uuid("user-a:memory:mem1")
 
     hit = MagicMock()
     hit.score = 0.9
@@ -85,12 +98,33 @@ def test_qdrant_upsert_and_search_mocked() -> None:
         "text": "neon billing notes",
         "href": None,
         "meta": {},
+        "owner_id": "user-a",
     }
     client.search.return_value = [hit]
-    results = idx.search("neon billing")
+    results = idx.search("neon billing", owner_id="user-a")
     assert len(results) == 1
     assert results[0].id == "mem1"
     assert results[0].kind == "memory"
+    assert results[0].owner_id == "user-a"
+    # Filter must be applied for tenant searches.
+    assert client.search.call_args.kwargs.get("query_filter") is not None
+
+
+def test_qdrant_search_filter_isolates_owners() -> None:
+    pytest.importorskip("qdrant_client")
+
+    idx = QdrantKnowledgeIndex("http://localhost:6333")
+    client = MagicMock()
+    idx._client = client
+    idx._available = True
+    client.search.return_value = []
+
+    idx.search("secret", owner_id="user-b")
+    filt = client.search.call_args.kwargs["query_filter"]
+    assert filt is not None
+    condition = filt.must[0]
+    assert condition.key == "owner_id"
+    assert condition.match.value == "user-b"
 
 
 def test_live_qdrant_roundtrip() -> None:
